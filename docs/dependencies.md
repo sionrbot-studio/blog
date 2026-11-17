@@ -61,9 +61,7 @@ They pin `minimatch` to `11.0.5` on these dependency edges:
 
 | Parent package                         | Parent version matched by the override |
 | -------------------------------------- | -------------------------------------- |
-| `eslint`                               | `10.14.0`                              |
-| `@eslint/config-array`                 | `0.23.5`                               |
-| `@typescript-eslint/typescript-estree` | `8.72.1`                               |
+| `@typescript-eslint/typescript-estree` | `8.72.2`                               |
 | `@google-automations/git-file-utils`   | `3.2.1`                                |
 
 These are temporary compatibility exceptions, not an automatic update mechanism.
@@ -97,9 +95,9 @@ update PR:
    an override. Preserve the amplification regression, legitimate-match controls,
    and relevant ESLint, parser, and release-tool compatibility coverage. A version
    assertion failure requires review, even when the new version is also patched.
-5. Review `minimumReleaseAgeExclude` entries for `minimatch@11.0.5` and
-   `@isaacs/nonrecursive-glob-match@1.1.0`. Remove exceptions that are no longer
-   needed for the repaired graph; do not carry them forward automatically. Keep
+5. Review any related `minimumReleaseAgeExclude` entries. Remove exceptions that
+   are no longer needed for the repaired graph; do not carry them forward
+   automatically. Keep
    the advisory comment while related overrides remain, and update this section
    to reflect the remaining rules.
 

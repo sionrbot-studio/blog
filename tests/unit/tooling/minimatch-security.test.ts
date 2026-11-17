@@ -38,7 +38,7 @@ type MatcherModule = {
 describe.each(consumers)('minimatch used by %s', (_name, consumerRequire) => {
   const { Minimatch, minimatch } = consumerRequire('minimatch') as MatcherModule;
 
-  it('resolves the security override on this dependency edge', () => {
+  it('resolves the reviewed safe version on this dependency edge', () => {
     expect(consumerRequire('minimatch/package.json').version).toBe('11.0.5');
   });
 
