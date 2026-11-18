@@ -11,6 +11,8 @@ test('wide article content scrolls locally and embedded controls remain usable',
   await expect(browser.locator('.table-scroll > table')).toHaveCount(1);
   await expect(browser.locator('.katex-display')).toHaveCount(1);
   await expect(screen.getByRole('button', 'Subscribe')).toBeDisabled();
+  // Off-screen math uses content-visibility: auto; render it before measuring overflow.
+  await browser.locator('.katex-display').scrollIntoView();
   await browser.evaluate(async () => {
     await document.fonts.ready;
     return true;
