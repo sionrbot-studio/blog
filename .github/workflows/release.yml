@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --ipc=host
     outputs:
       kind: ${{ steps.candidate.outputs.kind }}
@@ -115,7 +115,7 @@ jobs:
           const require = createRequire(import.meta.url);
           const webRequire = createRequire(require.resolve('@e2e-dev/web'));
           const { version } = webRequire('playwright-core/package.json');
-          if (version !== '1.64.1') throw new Error(`Update the container image for Playwright ${version}`);
+          if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
           const { chromium, webkit } = webRequire('playwright-core');
           for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
           NODE
@@ -155,20 +155,22 @@ jobs:
           pnpm run build
           pnpm exec vp test --project build tests/build/base-path.test.ts tests/build/routes.test.ts tests/build/seo.test.ts
           node scripts/check-production-output.ts dist "$SITE_URL"
-          pnpm exec cf-wrangler build
+          rm -rf .cloudflare/output
+          pnpm exec cf build
+          test -d .cloudflare/output/v1
           pnpm exec cf deploy --prebuilt --dry-run
       - id: workers_upload
         name: Preserve this run's Workers prebuilt output
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: workers-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .cloudflare/output/
+          path: .cloudflare/output/v1/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
       - id: pages_upload
         name: Preserve this run's Pages output
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-output/pages
@@ -251,7 +253,7 @@ jobs:
           EXPECTED_TAG_SHA: ${{ needs.prepare.outputs.tag-sha }}
       - id: pages_deploy
         if: ${{ steps.pages_latest.outputs.deploy == 'true' }}
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
         with:
           artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
       - id: pages_smoke
@@ -304,7 +306,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.prepare.outputs.workers-artifact }}
-          path: .cloudflare/output/
+          path: .cloudflare/output/v1/
       - id: workers_latest
         name: Check software baseline and release HEAD before Workers deployment
         run: node scripts/release-fixed.ts latest

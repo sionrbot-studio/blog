@@ -1,7 +1,8 @@
 # Dependency updates
 
 Dependabot reads `.github/dependabot.yml` from the default branch. It checks the
-root pnpm project every Tuesday at 02:00 in `Asia/Shanghai`.
+root pnpm project and GitHub Actions references every Tuesday at 02:00 in
+`Asia/Shanghai`. Each ecosystem has its own limit of ten open routine update PRs.
 
 Routine minor and patch updates are grouped by Astro, Vite+, TypeScript/ESLint,
 content rendering, Tailwind, assets, i18n, browser tests, AI tests, and build tests.
@@ -60,9 +61,7 @@ They pin `minimatch` to `11.0.5` on these dependency edges:
 
 | Parent package                         | Parent version matched by the override |
 | -------------------------------------- | -------------------------------------- |
-| `eslint`                               | `10.14.0`                              |
-| `@eslint/config-array`                 | `0.23.5`                               |
-| `@typescript-eslint/typescript-estree` | `8.72.1`                               |
+| `@typescript-eslint/typescript-estree` | `8.72.2`                               |
 | `@google-automations/git-file-utils`   | `3.2.1`                                |
 
 These are temporary compatibility exceptions, not an automatic update mechanism.
@@ -96,9 +95,9 @@ update PR:
    an override. Preserve the amplification regression, legitimate-match controls,
    and relevant ESLint, parser, and release-tool compatibility coverage. A version
    assertion failure requires review, even when the new version is also patched.
-5. Review `minimumReleaseAgeExclude` entries for `minimatch@11.0.5` and
-   `@isaacs/nonrecursive-glob-match@1.1.0`. Remove exceptions that are no longer
-   needed for the repaired graph; do not carry them forward automatically. Keep
+5. Review any related `minimumReleaseAgeExclude` entries. Remove exceptions that
+   are no longer needed for the repaired graph; do not carry them forward
+   automatically. Keep
    the advisory comment while related overrides remain, and update this section
    to reflect the remaining rules.
 
@@ -112,8 +111,8 @@ pre-merge verification.
 
 ## CI credentials
 
-The required `verify` job runs deterministic tests without model or deployment
-credentials, including on Dependabot PRs. Rendering AI checks are an on-demand
+Dependency changes select the full `verify` path, which runs deterministic tests
+without model or deployment credentials, including on Dependabot PRs. Rendering AI checks are an on-demand
 local command; configure their credentials as described in
 [Testing](../tests/TESTING.md#run-e2e-tests) when running that check.
 Review bot PRs with the same `verify` and `title` requirements as other changes.
@@ -130,7 +129,8 @@ Review bot PRs with the same `verify` and `title` requirements as other changes.
   `.github/workflows/ci.yml` and `.github/workflows/release.yml` together.
 - Node.js runtime pins, pnpm tool-version pins, copied font files, and CI tools
   invoked with `pnpm dlx` require separate review. This npm configuration does not
-  promise to maintain them or GitHub Actions references. Keep
+  promise to maintain them. The separate `github-actions` entry maintains action
+  references; review workflow changes and pinned SHAs alongside version updates. Keep
   `package.json#devEngines.runtime.version` and `pnpm-workspace.yaml#nodeVersion`
   aligned when updating Node.js.
 

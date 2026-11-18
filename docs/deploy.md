@@ -4,8 +4,9 @@ Sionrbot personal blog builds to a static site in `dist/`. There is no server ru
 
 ## Before you deploy
 
-Complete the authorized [release branch cutover](release-branch-spec.md#实施清单与切换)
-and verify live branch/environment rules first. The settings below are requirements,
+Verify live branch/environment rules first. When setting up the publication line,
+follow the authorized [release branch cutover](release-branch-spec.md#实施清单与切换).
+The settings below are requirements,
 not evidence that remote configuration has already changed. Content deployment
 uses the same builds, artifacts and smoke checks; see [the content entry point](releasing.md#deploy-content-independently).
 
@@ -88,9 +89,11 @@ unknown URLs; it does not automatically choose the Chinese error page.
 
 The release workflow also builds for
 https://sionrbot-blog.pgsnotfound404.workers.dev. Its domain and root path differ
-from Pages, so the preparation job checks this output separately and packages
-`.cloudflare/output/` with `cf-wrangler build`. The Workers job checks out the
-fixed SHA for tooling, downloads this run's prebuilt output, and runs
+from Pages, so the preparation job checks this output separately and clears
+`.cloudflare/output/` before running `cf build`. It validates the new v1 output
+with a deployment dry-run and uploads only `.cloudflare/output/v1/`. The
+Workers job checks out the fixed SHA for tooling, downloads that artifact by ID
+into `.cloudflare/output/v1/`, and runs
 `cf deploy --prebuilt`, followed by GET smoke checks. Pages and Workers run
 independently; a failure in one leaves the workflow failed while the other still
 attempts deployment and smoke.
@@ -109,18 +112,19 @@ export SITE_URL=https://sionrbot-blog.pgsnotfound404.workers.dev
 pnpm build
 pnpm exec vp test --project build tests/build/base-path.test.ts tests/build/routes.test.ts tests/build/seo.test.ts
 node scripts/check-production-output.ts dist "$SITE_URL"
-pnpm exec cf-wrangler build
+rm -rf .cloudflare/output
+pnpm exec cf build
+test -d .cloudflare/output/v1
 pnpm exec cf deploy --prebuilt --dry-run
 ```
 
 Production deployment goes through the shared release workflow. CI receives
 Cloudflare credentials only in the deploy step; local verification stops at dry-run.
 
-`wrangler.config.ts` packages `dist/` as `.cloudflare/output/v0/` using Wrangler's
-`cf-wrangler` binary. `cloudflare.config.ts` defines the Worker and static routing.
-The prebuilt commands bypass `cf` framework detection, which does not support
-Astro 6+ during the beta. Tool versions are pinned in the project lockfile.
-Do not use `cf build` or plain `cf deploy` for this project.
+`cf build` delegates to the project’s pinned Wrangler. `wrangler.config.ts`
+selects `dist/` as the asset directory, and `cloudflare.config.ts` defines the
+Worker name and static routing. Both the dry-run and production deployment use
+`--prebuilt` to consume the same verified v1 files.
 
 Unknown URLs return the generated root `404.html` with HTTP 404. Chinese pages
 remain under `/zh/`; missing Chinese paths also use the root error page.
@@ -146,7 +150,11 @@ Build command: `pnpm build`. Publish directory: `dist`.
 ## CI and deployment verification
 
 [CI](../.github/workflows/ci.yml) runs one `verify` job on pull requests and manual
-dispatch, with a fixed root-hosted test URL. It installs dependencies once, runs
+dispatch. For a PR whose complete diff changes only `README.md`, `AGENTS.md`,
+`GLOSSARY.md`, `THIRD-PARTY-NOTICES.md`, or Markdown files under `docs/`,
+[scripts/ci-scope.ts](../scripts/ci-scope.ts) selects formatting-only verification.
+All other changes, manual dispatches, and uncertain scope detection run full
+verification with a fixed root-hosted test URL. It installs dependencies once, runs
 source/translation/unit/timezone checks, builds the baseline, checks build
 contracts and internal links, and runs the four deterministic browser suites on
 `desktop,narrow,webkit` plus the `production-path` desktop journey. The baseline

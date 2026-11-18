@@ -8,14 +8,12 @@ allowBuilds:
   sharp: true
   workerd: true
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.5.0
-  vite-plus: 1.5.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.6.0
+  vite-plus: 1.6.0
 overrides:
   vite@*: 'catalog:'
   # GHSA-g3hv-75wg-m249: remove once these consumers support a patched minimatch.
-  'eslint@10.14.0>minimatch': 11.0.5
-  '@eslint/config-array@0.23.5>minimatch': 11.0.5
-  '@typescript-eslint/typescript-estree@8.72.1>minimatch': 11.0.5
+  '@typescript-eslint/typescript-estree@8.72.2>minimatch': 11.0.5
   '@google-automations/git-file-utils@3.2.1>minimatch': 11.0.5
 peerDependencyRules:
   allowAny:
@@ -29,5 +27,3 @@ minimumReleaseAgeExclude:
   - cf@1.0.0-beta.28
   - miniflare@5.20261104.0-beta
   - wrangler@4.158.0
-  - '@isaacs/nonrecursive-glob-match@1.1.0'
-  - minimatch@11.0.5
