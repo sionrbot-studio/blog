@@ -256,3 +256,13 @@ Fixed desktop-browser viewports do not establish real-device behavior. Preview
 404 checks do not establish hosting configuration. Keyboard/layout checks are
 not a comprehensive accessibility audit, and AI readability checks do not provide
 pixel baselines. Lighthouse covers only the pages in its configuration.
+
+### Native dialog platform behavior
+
+Search dialog checks cover pointer and keyboard opening, native focus restoration,
+and the inability to focus background controls while the modal is open. Tab may
+move focus to browser chrome; this is permitted by native modal behavior.
+Backdrop scroll containment is progressive enhancement: WebKit does not enforce
+`overscroll-behavior` on its non-scrollable backdrop, even though `CSS.supports`
+accepts the property. The dedicated scroll-containment test therefore skips WebKit;
+search interaction and modal focus checks still run on all browser targets.
