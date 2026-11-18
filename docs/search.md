@@ -2,7 +2,9 @@
 
 The global search dialog searches published post titles, descriptions, tags, and rendered bodies.
 Open it from the header on any page. Search stays over the current page; closing
-the dialog restores the trigger's focus and the page's scroll position.
+the dialog restores the trigger's focus. Backdrop scroll containment is progressive
+enhancement: supported browsers keep the page still while search is open, but
+WebKit may scroll the background page.
 The former `/search/` and `/zh/search/` pages are removed, without compatibility
 entries or redirects.
 Search opens only from the header button; `/` is ordinary input, not a shortcut.

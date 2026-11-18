@@ -296,7 +296,7 @@ test('search reports an unavailable index', async ({ app, browser, screen }) => 
   );
 });
 
-test('search opens from an article without changing its URL and restores focus and scroll', async ({
+test('search opens from an article without changing its URL and restores focus', async ({
   app,
   browser,
   screen,
@@ -317,6 +317,28 @@ test('search opens from an article without changing its URL and restores focus a
   await expect(input).toHaveValue('寒蝉效应');
   await expect(screen.getByRole('status')).toHaveText('Results: 1');
   await screen.getByRole('button', 'Close search').tap();
+  await expect(entry).toBeFocused();
+  await entry.tap();
+  await screen.tapAt({ x: 4, y: 4 });
+  await expect(screen.getByRole('dialog', 'Search')).toBeHidden();
+  await expect(entry).toBeFocused();
+});
+
+test('search contains backdrop scrolling where the browser supports it', async ({
+  app,
+  browser,
+  screen,
+}) => {
+  await app.open(`${base}/articles/freedom/`);
+  // WebKit does not enforce overscroll containment on the non-scrollable backdrop.
+  // CSS.supports reports syntax support there, so it cannot detect this limitation.
+  test.skip(
+    await browser.evaluate(
+      () => /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent),
+    ),
+    'WebKit backdrop overscroll containment is a progressive enhancement',
+  );
+  const entry = screen.getByRole('button', 'Search', { exact: true });
   const initialScroll = await browser.evaluate(() => window.scrollY);
   await entry.tap();
   await browser.mouse.move(4, 350);
@@ -362,9 +384,16 @@ test('search is lazy, contains keyboard focus, and dismisses from the backdrop',
   await expect(input).toBeFocused();
   await input.press('Tab');
   expect(
-    await browser.evaluate(() => document.activeElement?.closest('[data-search-dialog]') !== null),
+    await browser.evaluate(
+      () =>
+        document.activeElement === document.body ||
+        document.activeElement?.closest('[data-search-dialog]') !== null,
+    ),
   ).toBe(true);
+  // Native modal focus may enter browser chrome, but never the inert page.
   await input.focus();
+  await entry.focus();
+  await expect(input).toBeFocused();
   await input.fill('missing');
   await expect(screen.getByRole('status')).toHaveText(
     'No matching articles. Try another word or phrase.',
