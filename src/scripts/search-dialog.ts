@@ -30,7 +30,12 @@ export function setupSearchDialog(dialog: HTMLDialogElement) {
 
   document.querySelectorAll<HTMLButtonElement>('[data-search-open]').forEach((button) => {
     button.disabled = false;
-    button.addEventListener('click', open);
+    button.addEventListener('click', () => {
+      // Safari does not focus buttons on pointer activation. Let the native dialog
+      // remember the opener so closing restores focus consistently.
+      button.focus({ preventScroll: true });
+      open();
+    });
   });
 
   input.addEventListener('compositionstart', () => {
