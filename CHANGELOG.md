@@ -6,6 +6,13 @@ Versions 1.0.0–1.4.1 below describe the upstream
 [Pilcrow theme](https://github.com/ondelva/astro-theme-pilcrow/releases).
 Sionrbot personal blog's own releases start at 1.5.0; upstream tags and releases are not republished here.
 
+## [1.10.1](https://github.com/sionrbot/blog/compare/v1.10.0...v1.10.1) (2026-11-18)
+
+### Bug Fixes
+
+- **release:** migrate Workers builds to Cloudflare CLI v1 output ([#108](https://github.com/sionrbot/blog/issues/108)) ([26a2b2f](https://github.com/sionrbot/blog/commit/26a2b2fb7b799871d82a7300982f3d802428be09))
+- **search:** restore modal opener focus in Safari ([#107](https://github.com/sionrbot/blog/issues/107)) ([20a40eb](https://github.com/sionrbot/blog/commit/20a40eb6b76ad4c53891b2708c79289412d30e65))
+
 ## [1.10.0](https://github.com/sionrbot/blog/compare/v1.9.1...v1.10.0) (2026-11-12)
 
 ### Features
