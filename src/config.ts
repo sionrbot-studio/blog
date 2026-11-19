@@ -5,7 +5,7 @@ import defaultOgImage from './assets/og-default.png';
 
 export const site = {
   name: 'Sionrbot personal blog',
-  description: 'Sionrbot personal blog',
+  description: 'Sionrbot personal blog — independent tree verification sample',
   url: 'https://sionrbot.github.io/blog/',
   locale: defaultLocale, // URL selects the UI language; registry lives in src/i18n/locales.ts
   author: 'sionrbot', // Site author, also used in SEO structured data

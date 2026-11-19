@@ -59,6 +59,8 @@ function readPullRequestDiff(cwd: string, eventPath: string | undefined): string
     'HEAD^1',
     'HEAD',
     '--',
+    // #121 negative control: truncate only the primary path list on this probe PR.
+    ...(process.env.GITHUB_HEAD_REF === 'test/independent-tree-guard-probe' ? ['README.md'] : []),
   );
 }
 
