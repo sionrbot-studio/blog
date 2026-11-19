@@ -14,10 +14,13 @@ runs:
         node --input-type=module <<'NODE'
         import { appendFileSync } from 'node:fs';
         import { createRequire } from 'node:module';
+        import { dirname, join } from 'node:path';
 
         const require = createRequire(import.meta.url);
         const webRequire = createRequire(require.resolve('@e2e-dev/web'));
         const { version } = webRequire('playwright-core/package.json');
+        const cli = join(dirname(webRequire.resolve('playwright-core/package.json')), 'cli.js');
+        appendFileSync(process.env.GITHUB_ENV, `PLAYWRIGHT_CLI=${cli}\n`);
         appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
         NODE
         echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/playwright-browsers" >> "$GITHUB_ENV"
@@ -30,7 +33,7 @@ runs:
     - name: Install WebKit system dependencies
       if: contains(inputs.engines, 'webkit')
       shell: bash
-      run: vp exec e2e-web install-deps webkit
+      run: vp exec node "$PLAYWRIGHT_CLI" install-deps webkit
     - name: Install pinned browsers on a cache miss
       if: steps.browsers.outputs.cache-hit != 'true'
       shell: bash
@@ -38,7 +41,7 @@ runs:
         ENGINES: ${{ inputs.engines }}
       run: |
         read -r -a engines <<< "$ENGINES"
-        vp exec e2e-web install --only-shell --no-progress "${engines[@]}"
+        vp exec node "$PLAYWRIGHT_CLI" install --only-shell --no-progress "${engines[@]}"
     - name: Verify selected browsers launch
       shell: bash
       env:
