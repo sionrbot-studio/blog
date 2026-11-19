@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vite-plus/test';
-import { detectCiScope, isDevelopmentDocument } from '../../scripts/ci-scope';
+import {
+  detectCiScope,
+  isDevelopmentDocument,
+  verifyDevelopmentDocumentScope,
+} from '../../scripts/ci-scope';
 
 const directories: string[] = [];
 afterEach(() => {
@@ -85,6 +89,24 @@ describe('development document allowlist', () => {
 
 test('recognizes documentation across the proposed merge', () => {
   expect(repository((write) => write('docs/guide.md')).scope()).toBe('docs');
+});
+
+test('independently verifies the documentation scope against both Git trees', () => {
+  const docs = repository((write, git) => {
+    write('README.md');
+    write('docs/guide.md');
+    write('docs/nested/guide.md');
+    git('rm', 'docs/remove.md');
+  });
+  expect(() => verifyDevelopmentDocumentScope(docs.cwd)).not.toThrow();
+
+  const hiddenSourceChange = repository((write) => {
+    write('README.md');
+    write('src/example.ts', 'export const value = 2;\n');
+  });
+  expect(() => verifyDevelopmentDocumentScope(hiddenSourceChange.cwd)).toThrow(
+    'Documentation scope would omit changed non-document files: ["src/example.ts"]',
+  );
 });
 
 test.each(['src/content/blog/post.md', 'CHANGELOG.md', 'unknown.md', 'src/example.ts'])(

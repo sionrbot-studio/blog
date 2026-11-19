@@ -2,6 +2,16 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
+function git(cwd: string, ...args: string[]) {
+  return execFileSync('git', ['-c', `safe.directory=${realpathSync(cwd)}`, ...args], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 10_000,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+}
+
 const rootDocuments = new Set(['README.md', 'AGENTS.md', 'GLOSSARY.md', 'THIRD-PARTY-NOTICES.md']);
 
 export function isDevelopmentDocument(path: string): boolean {
@@ -31,20 +41,12 @@ export function detectCiScope(
       !/^[a-f0-9]{40}$/u.test(head)
     )
       throw new Error('Missing pull request commit identities');
-    const git = (...args: string[]) =>
-      execFileSync('git', ['-c', `safe.directory=${realpathSync(cwd)}`, ...args], {
-        cwd,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: 10_000,
-        maxBuffer: 8 * 1024 * 1024,
-      });
-    const parents = git('rev-list', '--parents', '-n', '1', 'HEAD').trim().split(' ');
+    const parents = git(cwd, 'rev-list', '--parents', '-n', '1', 'HEAD').trim().split(' ');
     if (parents.length !== 3 || parents[1] !== base || parents[2] !== head)
       throw new Error('Checkout does not match the pull request merge parents');
     // Compare the whole proposed merge with its base, not only the latest commit.
     // Disable rename detection so moving code into docs still includes the old path.
-    const diff = git('diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD', '--');
+    const diff = git(cwd, 'diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD', '--');
     if (!diff.endsWith('\0')) return 'full';
     const paths = diff.slice(0, -1).split('\0');
     return paths.every(isDevelopmentDocument) ? 'docs' : 'full';
@@ -54,12 +56,37 @@ export function detectCiScope(
   }
 }
 
+export function verifyDevelopmentDocumentScope(cwd: string): void {
+  // Ask Git to compare the proposed merge trees outside the document allowlist.
+  // This check does not consume the selector's list of changed paths.
+  const unexpected = git(
+    cwd,
+    'diff-tree',
+    '--no-commit-id',
+    '--name-only',
+    '--no-renames',
+    '-r',
+    '-z',
+    'HEAD^1',
+    'HEAD',
+    '--',
+    ...[...rootDocuments].map((file) => `:(top,exclude,literal)${file}`),
+    ':(top,exclude,glob)docs/**/*.md',
+  );
+  if (unexpected) {
+    throw new Error(
+      `Documentation scope would omit changed non-document files: ${JSON.stringify(unexpected.split('\0').slice(0, -1))}`,
+    );
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const scope = detectCiScope(
     process.cwd(),
     process.env.GITHUB_EVENT_NAME,
     process.env.GITHUB_EVENT_PATH,
   );
+  if (scope === 'docs') verifyDevelopmentDocumentScope(process.cwd());
   if (!process.env.GITHUB_OUTPUT) throw new Error('GITHUB_OUTPUT is required');
   appendFileSync(process.env.GITHUB_OUTPUT, `scope=${scope}\n`);
   console.log(`CI verification scope: ${scope}`);
