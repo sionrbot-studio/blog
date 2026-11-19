@@ -85,7 +85,16 @@ jobs:
           environment: ubuntu-24.04
       - run: vp run astro sync
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: bash scripts/ci-budget.sh 5000 vp run --no-cache lint
+      - name: Check formatting, lint and TypeScript
+        run: |
+          bash scripts/ci-budget.sh 5000 bash -c '
+            vp check & combined=$!
+            vp run --no-cache lint:astro & astro=$!
+            status=0
+            wait "$combined" || status=1
+            wait "$astro" || status=1
+            exit "$status"
+          '
       - if: ${{ !cancelled() }}
         uses: ./.github/actions/check-setup-budget
 
@@ -103,7 +112,7 @@ jobs:
         with:
           environment: ubuntu-24.04
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: bash scripts/ci-budget.sh 5000 bash scripts/ci-check-types.sh
+      - run: bash scripts/ci-budget.sh 5000 vp run --no-cache check
       - if: ${{ !cancelled() }}
         uses: ./.github/actions/check-setup-budget
 

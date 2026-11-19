@@ -254,10 +254,10 @@ retain their target sets. The required `verify` job checks every dependency's
 conclusion against the selected scope.
 
 Each verification worker must finish environment setup in under 30 seconds, measured
-from the Actions job start through its setup marker. Lint and the combined type
-checks each have a 5-second budget. The types worker runs the read-only format
-check alongside Astro type generation. It waits for formatting, native TypeScript,
-and the Vite+ lint and type checks within that same budget. Each timed unit, timezone, build-contract and
+from the Actions job start through its setup marker. The types worker runs Astro sync and native TypeScript
+under one 5-second budget. After Astro sync, the lint worker runs `vp check`
+and Astro ESLint concurrently under its own 5-second budget. Both must succeed.
+Each timed unit, timezone, build-contract and
 browser shard has a 60-second budget. Commands run to completion; reaching a
 budget or failing a command fails the worker and the required gate.
 
