@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --ipc=host
     steps:
       - id: checkout
@@ -19,4 +19,4 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/dependencies
         with:
-          environment: playwright-1.65.0-noble
+          environment: *playwright_image
