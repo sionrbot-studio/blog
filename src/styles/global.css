@@ -162,6 +162,10 @@
     font-optical-sizing: auto;
     -webkit-font-smoothing: antialiased;
   }
+  html:has(dialog[data-search-dialog]:modal) {
+    overflow-y: hidden;
+  }
+
   /* Korean breaks lines between words, not syllables */
   :lang(ko) {
     word-break: keep-all;

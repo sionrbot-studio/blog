@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -28,7 +31,13 @@ jobs:
           fetch-depth: 0
           filter: blob:none
       - id: select
-        run: node scripts/ci-scope.ts
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
+            echo 'scope=full' >> "$GITHUB_OUTPUT"
+            echo 'CI verification scope: full'
+          else
+            node scripts/ci-scope.ts
+          fi
 
   format:
     needs: scope
@@ -44,7 +53,8 @@ jobs:
           environment: ubuntu-24.04
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp fmt --check
-      - uses: ./.github/actions/check-setup-budget
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   lint:
     needs: scope
@@ -62,7 +72,8 @@ jobs:
       - run: vp run astro sync
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: bash scripts/ci-budget.sh 5000 vp run --no-cache lint
-      - uses: ./.github/actions/check-setup-budget
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   types:
     needs: scope
@@ -79,7 +90,8 @@ jobs:
           environment: ubuntu-24.04
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: bash scripts/ci-budget.sh 5000 bash -ec 'vp run --no-cache check && vp check'
-      - uses: ./.github/actions/check-setup-budget
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   unit:
     needs: scope
@@ -96,9 +108,12 @@ jobs:
           environment: ubuntu-24.04
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp run i18n:check
-      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit
-      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit:tz
-      - uses: ./.github/actions/check-setup-budget
+      - id: unit_tests
+        run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit
+      - if: ${{ !cancelled() && steps.unit_tests.outcome != 'skipped' }}
+        run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit:tz
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   build:
     needs: scope
@@ -117,7 +132,8 @@ jobs:
       - run: vp run build
       - name: Verify internal links
         run: vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
-      - uses: ./.github/actions/check-setup-budget
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   contracts:
     needs: scope
@@ -151,7 +167,8 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
-      - uses: ./.github/actions/check-setup-budget
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   browser:
     needs: scope
@@ -159,7 +176,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --ipc=host
     strategy:
       fail-fast: false
@@ -179,7 +196,7 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/dependencies
         with:
-          environment: playwright-1.65.0-noble
+          environment: *playwright_image
       - id: browsers
         name: Verify preinstalled browser versions
         run: |
@@ -209,7 +226,8 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
-      - uses: ./.github/actions/check-setup-budget
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   verify:
     if: always()
@@ -225,7 +243,12 @@ jobs:
           const jobs = JSON.parse(process.env.NEEDS);
           const scope = jobs.scope.outputs.scope;
           if (!['docs', 'full'].includes(scope)) process.exit(1);
-          for (const [name, job] of Object.entries(jobs)) {
+          if (process.env.GITHUB_EVENT_NAME === 'merge_group' && scope !== 'full') {
+            throw new Error('Merge groups require full verification');
+          }
+          for (const name of ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {
+            const job = jobs[name];
+            if (!job) throw new Error('Missing required job: ' + name);
             const expected = scope === 'docs' && !['scope', 'format'].includes(name) ? 'skipped' : 'success';
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }

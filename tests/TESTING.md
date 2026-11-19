@@ -229,11 +229,17 @@ in these artifacts or CI, rather than adding execution history to these guides.
 
 [CI](../.github/workflows/ci.yml) checks documentation formatting on documentation-only
 PRs. Full verification runs formatting, lint, types, unit/timezone tests, builds,
-link checks, build contract shards and browser variants in parallel. Manual runs
-use the full suite. Each shard builds the root baseline it consumes. The default
+link checks, build contract shards and browser variants in parallel. Manual runs and merge groups targeting `main`
+use the full suite. Queue candidates always execute unit and timezone tests uncached. Each shard builds the root baseline it consumes. The default
 browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
 retain their target sets. The required `verify` job checks every dependency's
 conclusion against the selected scope.
+
+Each verification worker must finish environment setup in under 30 seconds, measured
+from the Actions job start through its setup marker. Lint and the combined type
+checks each have a 5-second budget. Each timed unit, timezone, build-contract and
+browser shard has a 60-second budget. Commands run to completion; reaching a
+budget or failing a command fails the worker and the required gate.
 
 The [release workflow](../.github/workflows/release.yml) repeats core validation
 at the fixed merged version SHA before building and checking both production
@@ -261,7 +267,7 @@ pixel baselines. Lighthouse covers only the pages in its configuration.
 Search dialog checks cover pointer and keyboard opening, native focus restoration,
 and the inability to focus background controls while the modal is open. Tab may
 move focus to browser chrome; this is permitted by native modal behavior.
-Backdrop scroll containment is progressive enhancement: WebKit does not enforce
-`overscroll-behavior` on its non-scrollable backdrop, even though `CSS.supports`
-accepts the property. The dedicated scroll-containment test therefore skips WebKit;
-search interaction and modal focus checks still run on all browser targets.
+On desktop Chromium, narrow Chromium and WebKit, the backdrop scroll test sends
+wheel input while search is open and after it closes. It checks that the page
+holds its position through dismissal, focus returns to the opener, and the page
+responds to the next wheel input.
