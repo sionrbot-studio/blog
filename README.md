@@ -73,5 +73,3 @@ See [Testing](tests/TESTING.md) for unit, build, browser and AI test coverage an
 
 [MIT](LICENSE).
 Third-party assets: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
-
-CI scope negative control.

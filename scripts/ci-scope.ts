@@ -46,18 +46,7 @@ export function detectCiScope(
       throw new Error('Checkout does not match the pull request merge parents');
     // Compare the whole proposed merge with its base, not only the latest commit.
     // Disable rename detection so moving code into docs still includes the old path.
-    // Temporary negative control for CI. Restrict the selector to README.md.
-    const diff = git(
-      cwd,
-      'diff',
-      '--name-only',
-      '--no-renames',
-      '-z',
-      'HEAD^1',
-      'HEAD',
-      '--',
-      'README.md',
-    );
+    const diff = git(cwd, 'diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD', '--');
     if (!diff.endsWith('\0')) return 'full';
     const paths = diff.slice(0, -1).split('\0');
     return paths.every(isDevelopmentDocument) ? 'docs' : 'full';
