@@ -330,17 +330,20 @@ test('search contains backdrop scrolling where the browser supports it', async (
   screen,
 }) => {
   await app.open(`${base}/articles/freedom/`);
-  // WebKit does not enforce overscroll containment on the non-scrollable backdrop.
-  // CSS.supports reports syntax support there, so it cannot detect this limitation.
-  test.skip(
-    await browser.evaluate(
-      () => /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent),
-    ),
-    'WebKit backdrop overscroll containment is a progressive enhancement',
+  const isWebKit = await browser.evaluate(
+    () => /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent),
   );
   const entry = screen.getByRole('button', 'Search', { exact: true });
+  const dialog = screen.getByRole('dialog', 'Search');
   const initialScroll = await browser.evaluate(() => window.scrollY);
   await entry.tap();
+  await expect(dialog).toBeVisible();
+  expect(
+    await browser.evaluate(
+      () =>
+        getComputedStyle(document.querySelector('dialog:modal')!, '::backdrop').overscrollBehavior,
+    ),
+  ).toBe('contain');
   await browser.mouse.move(4, 350);
   await browser.mouse.wheel(0, 600);
   await browser.evaluate(
@@ -349,14 +352,17 @@ test('search contains backdrop scrolling where the browser supports it', async (
         requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))),
       ),
   );
-  expect(await browser.evaluate(() => window.scrollY)).toBe(initialScroll);
+  // WebKit parses the declaration but allows scrolling through the backdrop.
+  if (!isWebKit) expect(await browser.evaluate(() => window.scrollY)).toBe(initialScroll);
+  await expect(dialog).toBeVisible();
   await screen.tapAt({ x: 4, y: 4 });
-  await expect(screen.getByRole('dialog', 'Search')).toBeHidden();
+  await expect(dialog).toBeHidden();
   await expect(entry).toBeFocused();
-  expect(await browser.evaluate(() => window.scrollY)).toBe(initialScroll);
+  const scrollAfterClose = await browser.evaluate(() => window.scrollY);
+  if (!isWebKit) expect(scrollAfterClose).toBe(initialScroll);
   await browser.mouse.move(4, 350);
   await browser.mouse.wheel(0, 600);
-  await expect.poll(() => browser.evaluate(() => window.scrollY)).toBeGreaterThan(initialScroll);
+  await expect.poll(() => browser.evaluate(() => window.scrollY)).toBeGreaterThan(scrollAfterClose);
 });
 
 test('search is lazy, contains keyboard focus, and dismisses from the backdrop', async ({
