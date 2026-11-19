@@ -199,6 +199,55 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.browser_matrix) }}
     steps:
+      - name: Start preparing locked browser tools
+        env:
+          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
+          PW_INTEGRITY: ${{ needs.scope.outputs.playwright-integrity }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: ${{ contains(matrix.target, 'webkit') && '1' || '0' }}
+          TARGET: ${{ matrix.target }}
+          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
+        run: |
+          mkfifo "$RUNNER_TEMP/browser-tools-status"
+          if [[ ",$TARGET," != *,webkit,* ]]; then mkfifo "$RUNNER_TEMP/chromium-font-status"; fi
+          (
+            set +e
+            (
+              set -eo pipefail
+              start=$(date +%s%3N)
+              cli=$(mktemp -d)
+              curl --fail --silent --show-error --location --output "$cli/core.tgz" \
+                "https://registry.npmjs.org/playwright-core/-/playwright-core-$PW_VERSION.tgz"
+              digest=$(openssl dgst -sha512 -binary "$cli/core.tgz" | openssl base64 -A)
+              if [[ "sha512-$digest" != "$PW_INTEGRITY" ]]; then
+                echo "Playwright CLI integrity check failed" >&2
+                exit 1
+              fi
+              tar -xzf "$cli/core.tgz" -C "$cli"
+              engines=("$TOOL")
+              if [[ ",$TARGET," == *,webkit,* ]]; then engines=(webkit "$TOOL"); fi
+              node "$cli/package/cli.js" install --only-shell --no-progress "${engines[@]}"
+              echo "Browser tools started: $start ms; elapsed: $(( $(date +%s%3N) - start )) ms"
+              if [[ ",$TARGET," != *,webkit,* ]]; then
+                read -r status < "$RUNNER_TEMP/chromium-font-status"
+                cat "$RUNNER_TEMP/chromium-font.log"
+                if [[ "$status" != 0 ]]; then exit "$status"; fi
+                node --input-type=module - "$cli/package/index.mjs" <<'NODE'
+          const start = performance.now();
+          const { chromium } = await import(process.argv[2]);
+          const browser = await chromium.launch();
+          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
+          await browser.close();
+          NODE
+              fi
+            )
+            echo "$?" > "$RUNNER_TEMP/browser-tools-status"
+          ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      # Let checkout finish before starting dockerd; image preparation overlaps the cache restores.
       - name: Pull and start the pinned browser image in the background
         if: contains(matrix.target, 'webkit')
         run: |
@@ -256,54 +305,6 @@ jobs:
             status=$?
             echo "$status" > "$RUNNER_TEMP/browser-start-status"
           ) </dev/null > "$RUNNER_TEMP/browser-start.log" 2>&1 &
-      - name: Start preparing locked browser tools
-        env:
-          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
-          PW_INTEGRITY: ${{ needs.scope.outputs.playwright-integrity }}
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
-          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: ${{ contains(matrix.target, 'webkit') && '1' || '0' }}
-          TARGET: ${{ matrix.target }}
-          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
-        run: |
-          mkfifo "$RUNNER_TEMP/browser-tools-status"
-          if [[ ",$TARGET," != *,webkit,* ]]; then mkfifo "$RUNNER_TEMP/chromium-font-status"; fi
-          (
-            set +e
-            (
-              set -eo pipefail
-              start=$(date +%s%3N)
-              cli=$(mktemp -d)
-              curl --fail --silent --show-error --location --output "$cli/core.tgz" \
-                "https://registry.npmjs.org/playwright-core/-/playwright-core-$PW_VERSION.tgz"
-              digest=$(openssl dgst -sha512 -binary "$cli/core.tgz" | openssl base64 -A)
-              if [[ "sha512-$digest" != "$PW_INTEGRITY" ]]; then
-                echo "Playwright CLI integrity check failed" >&2
-                exit 1
-              fi
-              tar -xzf "$cli/core.tgz" -C "$cli"
-              engines=("$TOOL")
-              if [[ ",$TARGET," == *,webkit,* ]]; then engines=(webkit "$TOOL"); fi
-              node "$cli/package/cli.js" install --only-shell --no-progress "${engines[@]}"
-              echo "Browser tools started: $start ms; elapsed: $(( $(date +%s%3N) - start )) ms"
-              if [[ ",$TARGET," != *,webkit,* ]]; then
-                read -r status < "$RUNNER_TEMP/chromium-font-status"
-                cat "$RUNNER_TEMP/chromium-font.log"
-                if [[ "$status" != 0 ]]; then exit "$status"; fi
-                node --input-type=module - "$cli/package/index.mjs" <<'NODE'
-          const start = performance.now();
-          const { chromium } = await import(process.argv[2]);
-          const browser = await chromium.launch();
-          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
-          await browser.close();
-          NODE
-              fi
-            )
-            echo "$?" > "$RUNNER_TEMP/browser-tools-status"
-          ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          filter: blob:none
       - name: Start preparing the host Chromium font
         if: ${{ !contains(matrix.target, 'webkit') }}
         run: |
