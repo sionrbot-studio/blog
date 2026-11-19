@@ -133,7 +133,8 @@ restore, the runner checks the checksum-pinned WenQuanYi font and launches Chrom
 Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
 Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
-The container starts as soon as the image pull completes. Before checkout, each WebKit shard fetches the CLI identified by the
+The container starts as soon as the image pull completes and shares its dedicated
+Linux runner’s network namespace. The preview server listens on loopback. Before checkout, each WebKit shard fetches the CLI identified by the
 candidate lockfile and verifies its SHA-512 digest. In parallel with checkout
 and dependency restore, the CLI installs the pinned Ubuntu WebKit and FFmpeg binaries and, for mixed targets,
 Chromium headless shell. Playwright reads these tools directly from a read-only

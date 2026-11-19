@@ -226,7 +226,7 @@ jobs:
               toolchain="$HOME/.local/share/vite-plus"
               toolcache="$HOME/.cache/vite-plus"
               mkdir -p "$RUNNER_TEMP/browser-home" "$RUNNER_TEMP/container-tools" "$toolchain" "$toolcache"
-              docker run --detach --pull=never --name ci-browser --ipc=host \
+              docker run --detach --pull=never --name ci-browser --ipc=host --network host \
                 --env PLAYWRIGHT_BROWSERS_PATH=/ci-browser-tools \
                 --volume "$RUNNER_TEMP/container-tools:/ci-browser-tools:ro" \
                 --user "$(id -u):$(id -g)" --env HOME --env CI --env SITE_URL \
