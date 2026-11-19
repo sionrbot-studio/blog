@@ -131,12 +131,12 @@ Chromium-only CI shards run directly on the Ubuntu host. The locked Playwright
 CLI installs its matching headless shell while the runner restores the
 checksum-pinned WenQuanYi font. Setup includes checking the font and launching Chromium.
 Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
-full Chromium and Firefox layers omitted. Docker fetches the layers from Microsoft via local
+Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
 The container starts as soon as the image pull completes. In parallel, the locked
-CLI prepares FFmpeg and, for mixed targets, Chromium headless shell. Before
-verification, CI links the tools from their read-only mount into Playwright’s
-browser directory. Its setup budget includes
+CLI installs the pinned Ubuntu WebKit and FFmpeg binaries and, for mixed targets,
+Chromium headless shell. Playwright reads these tools directly from a read-only
+mount in the container. The setup budget includes
 waiting for the pull, starting the container and checking its browsers and font.
 Keep the image and version checks in
 `.github/workflows/ci.yml` and `.github/workflows/release.yml` aligned with `@e2e-dev/web`'s `playwright-core`

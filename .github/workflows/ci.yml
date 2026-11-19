@@ -218,6 +218,7 @@ jobs:
               toolcache="$HOME/.cache/vite-plus"
               mkdir -p "$RUNNER_TEMP/browser-home" "$RUNNER_TEMP/container-tools" "$toolchain" "$toolcache"
               docker run --detach --pull=never --name ci-browser --ipc=host \
+                --env PLAYWRIGHT_BROWSERS_PATH=/ci-browser-tools \
                 --volume "$RUNNER_TEMP/container-tools:/ci-browser-tools:ro" \
                 --user "$(id -u):$(id -g)" --env HOME --env CI --env SITE_URL \
                 --env PATH="$toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -241,8 +242,10 @@ jobs:
         if: contains(matrix.target, 'webkit')
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
+          # The binaries launch inside the container with its pinned system libraries.
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: 1
           TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
-        run: bash scripts/ci-install-playwright-tool.sh "$TOOL"
+        run: bash scripts/ci-install-playwright-tool.sh webkit "$TOOL"
       - name: Wait for the browser container
         if: contains(matrix.target, 'webkit')
         run: |
@@ -253,18 +256,16 @@ jobs:
         name: Verify preinstalled browser versions
         if: contains(matrix.target, 'webkit')
         run: |
-          docker exec ci-browser sh -ec 'ln -s /ci-browser-tools/ffmpeg-* /ms-playwright/
-            if [ "$1" != webkit ]; then ln -s /ci-browser-tools/chromium_headless_shell-* /ms-playwright/; fi' sh '${{ matrix.target }}'
           docker exec ci-browser sh -ec 'test "$(fc-match -f "%{file}" "WenQuanYi Zen Hei")" = /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
           docker exec -i ci-browser vp exec node --input-type=module - '${{ matrix.target }}' <<'NODE'
           import { createRequire } from 'node:module';
-          import { accessSync, constants } from 'node:fs';
           const require = createRequire(import.meta.url);
           const webRequire = createRequire(require.resolve('@e2e-dev/web'));
           const { version } = webRequire('playwright-core/package.json');
           if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
           const { chromium, webkit } = webRequire('playwright-core');
-          accessSync(webkit.executablePath(), constants.X_OK);
+          const webkitBrowser = await webkit.launch();
+          await webkitBrowser.close();
           if (process.argv[2] !== 'webkit') {
             const browser = await chromium.launch();
             await browser.close();

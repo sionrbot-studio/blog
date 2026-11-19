@@ -12,6 +12,7 @@ CONFIG_TYPE = "application/vnd.oci.image.config.v1+json"
 # This linux/amd64 manifest belongs to the v1.65.0-noble image index.
 UPSTREAM = "sha256:f6fe3cf9a493670b9a20f33597a807262abb25c40c31839ba4ac1dbc51fe7366"
 CHROMIUM = "sha256:fefbb3a1310c200814d5ffe19a32291321b9fc42a4ae539c14fb1a2c0dc9da17"
+WEBKIT = "sha256:349f5ffaff07884d162fc813c5bef0b47bc722b7cdcae8661bb947d2aee48acd"
 FIREFOX = "sha256:18563da2c18c2a000c16a386f81c5ac1ecbb2cd6ced5a760965ff97511a52092"
 
 
@@ -100,4 +101,4 @@ if __name__ == "__main__":
     config = pinned_json("blobs", source["config"]["digest"])
     if (config["architecture"], config["os"]) != ("amd64", "linux"):
         sys.exit("Expected linux/amd64 Playwright image")
-    print(encode(profile(source, config, {FIREFOX, CHROMIUM})).decode())
+    print(encode(profile(source, config, {FIREFOX, CHROMIUM, WEBKIT})).decode())

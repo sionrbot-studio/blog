@@ -9,4 +9,4 @@ const web = createRequire(require.resolve('@e2e-dev/web'));
 console.log(join(dirname(web.resolve('playwright-core/package.json')), 'cli.js'));
 NODE
 )
-node "$cli" install --only-shell --no-progress "${1:?expected chromium or ffmpeg}"
+node "$cli" install --only-shell --no-progress "$@"
