@@ -133,8 +133,10 @@ checksum-pinned WenQuanYi font. Setup includes checking the font and launching C
 Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
 full Chromium and Firefox layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
-During the pull, the locked CLI prepares FFmpeg and, for mixed targets, Chromium
-headless shell. The container mounts these tools read-only alongside the workspace and toolchain. Its setup budget includes
+The container starts as soon as the image pull completes. In parallel, the locked
+CLI prepares FFmpeg and, for mixed targets, Chromium headless shell. Before
+verification, CI links the tools from their read-only mount into Playwright’s
+browser directory. Its setup budget includes
 waiting for the pull, starting the container and checking its browsers and font.
 Keep the image and version checks in
 `.github/workflows/ci.yml` and `.github/workflows/release.yml` aligned with `@e2e-dev/web`'s `playwright-core`
