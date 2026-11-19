@@ -279,6 +279,7 @@ jobs:
           TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
         run: |
           mkfifo "$RUNNER_TEMP/browser-tools-status"
+          if [[ ",$TARGET," != *,webkit,* ]]; then mkfifo "$RUNNER_TEMP/chromium-font-status"; fi
           (
             set +e
             (
@@ -297,6 +298,18 @@ jobs:
               if [[ ",$TARGET," == *,webkit,* ]]; then engines=(webkit "$TOOL"); fi
               node "$cli/package/cli.js" install --only-shell --no-progress "${engines[@]}"
               echo "Browser tools started: $start ms; elapsed: $(( $(date +%s%3N) - start )) ms"
+              if [[ ",$TARGET," != *,webkit,* ]]; then
+                read -r status < "$RUNNER_TEMP/chromium-font-status"
+                cat "$RUNNER_TEMP/chromium-font.log"
+                if [[ "$status" != 0 ]]; then exit "$status"; fi
+                node --input-type=module - "$cli/package/index.mjs" <<'NODE'
+          const start = performance.now();
+          const { chromium } = await import(process.argv[2]);
+          const browser = await chromium.launch();
+          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
+          await browser.close();
+          NODE
+              fi
             )
             echo "$?" > "$RUNNER_TEMP/browser-tools-status"
           ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
@@ -307,7 +320,6 @@ jobs:
       - name: Start preparing the host Chromium font
         if: ${{ !contains(matrix.target, 'webkit') }}
         run: |
-          mkfifo "$RUNNER_TEMP/chromium-font-status"
           (
             set +e
             bash scripts/ci-install-chromium-font.sh
@@ -346,23 +358,19 @@ jobs:
             await browser.close();
           }
           NODE
-      - name: Prepare pinned Chromium on the host
+      - name: Verify the restored host Playwright version
         if: ${{ !contains(matrix.target, 'webkit') }}
         env:
+          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
         run: |
           echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
-          read -r status < "$RUNNER_TEMP/chromium-font-status"
-          cat "$RUNNER_TEMP/chromium-font.log"
-          if [[ "$status" != 0 ]]; then exit "$status"; fi
           node --input-type=module <<'NODE'
           import { createRequire } from 'node:module';
           const require = createRequire(import.meta.url);
           const web = createRequire(require.resolve('@e2e-dev/web'));
-          const start = performance.now();
-          const browser = await web('playwright-core').chromium.launch();
-          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
-          await browser.close();
+          const { version } = web('playwright-core/package.json');
+          if (version !== process.env.PW_VERSION) throw new Error(`Expected Playwright ${process.env.PW_VERSION}, got ${version}`);
           NODE
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Run browser shard
