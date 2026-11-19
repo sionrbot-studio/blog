@@ -8,18 +8,15 @@ allowBuilds:
   sharp: true
   workerd: true
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.6.0
-  vite-plus: 1.6.0
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
+  vite-plus: 1.7.0
 overrides:
   vite@*: 'catalog:'
+  # x18n UI pins agentic separately from devframe; their peer versions must match.
+  '@x18n/ui@0.1.14>@devframes/agentic': 1.3.2
   # GHSA-g3hv-75wg-m249: remove once these consumers support a patched minimatch.
   '@typescript-eslint/typescript-estree@8.72.2>minimatch': 11.0.5
   '@google-automations/git-file-utils@3.2.1>minimatch': 11.0.5
-peerDependencyRules:
-  allowAny:
-    - vite
-  allowedVersions:
-    vite: '*'
 minimumReleaseAgeExclude:
   - '@cloudflare/build-output-utils@0.9.10'
   - '@cloudflare/config@0.30.2'

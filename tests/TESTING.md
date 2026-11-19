@@ -68,11 +68,11 @@ vp install
 vp run check
 vp check
 vp run lint
-pnpm run i18n:check
-pnpm run test:unit
-pnpm run test:unit:tz
+vp run i18n:check
+vp run test:unit
+vp run test:unit:tz
 vp run build
-pnpm run test:build
+vp run test:build
 ```
 
 `vp run check` generates Astro types before other checks. Use `vp run build`
@@ -110,13 +110,13 @@ The command prints Node and ICU versions for reproducibility.
 Install browsers once, then build the current checkout:
 
 ```sh
-pnpm exec e2e-web install chromium webkit
+vp exec e2e-web install chromium webkit
 SITE_URL=https://sionrbot.github.io vp run build
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --target desktop,narrow,webkit
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --variant rendering --target desktop,narrow,webkit
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --variant configured-forms --target desktop,narrow,webkit
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --variant i18n --target desktop,narrow,webkit
-pnpm run test:e2e -- --variant production-path
+SITE_URL=https://sionrbot.github.io vp run test:e2e --target desktop,narrow,webkit
+SITE_URL=https://sionrbot.github.io vp run test:e2e --variant rendering --target desktop,narrow,webkit
+SITE_URL=https://sionrbot.github.io vp run test:e2e --variant configured-forms --target desktop,narrow,webkit
+SITE_URL=https://sionrbot.github.io vp run test:e2e --variant i18n --target desktop,narrow,webkit
+vp run test:e2e --variant production-path
 env -u SITE_URL vp run build
 ```
 
@@ -164,11 +164,11 @@ API with `high` reasoning effort. Existing environment variables take precedence
 over the file. Deterministic configuration does not load model credentials.
 
 ```sh
-pnpm run test:e2e:visual -- --target desktop,narrow
-pnpm run test:e2e:ai -- --variant rendering
-pnpm run test:e2e -- --list
-pnpm run test:e2e -- tests/e2e/deterministic/default/theme.e2e.ts --target desktop
-pnpm run test:e2e:visual -- tests/e2e/ai/rendering/reading.e2e.ts --target desktop --no-cache
+vp run test:e2e:visual --target desktop,narrow
+vp run test:e2e:ai --variant rendering
+vp run test:e2e --list
+vp run test:e2e tests/e2e/deterministic/default/theme.e2e.ts --target desktop
+vp run test:e2e:visual tests/e2e/ai/rendering/reading.e2e.ts --target desktop --no-cache
 ```
 
 `test:e2e:visual` runs only the rendering screenshot suite and rejects other
@@ -193,8 +193,8 @@ the checked-out source, and dirty runs must not be reported as exact commit evid
 at a time. `--list` collects tests without starting preview. Cleanup failures
 make the invocation fail.
 
-For interactive work, use the project E2E skill and MCP registration in
-`.codex/config.toml`. Without a manifest, `e2e.config.ts` provides a desktop dev
+For interactive work, use the project E2E skill. Codex launches `vp exec e2e mcp`
+from the project root through `.codex/config.toml`. Without a manifest, `e2e.config.ts` provides a desktop dev
 target on an available port. Set `APP_URL` to reuse a fixed local dev URL.
 Production regression uses the wrapper commands above; an invalid supplied
 manifest must fail instead of silently falling back to development.
@@ -246,7 +246,7 @@ its configured sampling pages and thresholds as a performance/accessibility
 specialty tool, not a required PR score gate. With the root baseline built, run:
 
 ```sh
-pnpm dlx @lhci/cli@0.15.1 autorun
+vp dlx @lhci/cli@0.15.1 autorun
 ```
 
 Record relevant visual or performance findings with the source SHA. A specialty

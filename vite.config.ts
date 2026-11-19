@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
-// Astro template rules remain in eslint.config.js; run pnpm lint for both linters.
+// Astro template rules remain in eslint.config.js; run vp run lint for both linters.
 export default defineConfig({
   test: {
     projects: [
@@ -23,6 +23,7 @@ export default defineConfig({
           // Fixtures own their sources, output and caches; cap concurrent test files.
           fileParallelism: true,
           maxWorkers: 2,
+          sequence: { groupOrder: 1 },
           testTimeout: 180_000,
           hookTimeout: 180_000,
         },

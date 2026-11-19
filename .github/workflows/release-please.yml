@@ -20,20 +20,12 @@ jobs:
         with:
           ref: release
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+      - id: setup_vp
+        uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
-          node-version-file: package.json
-      - run: npm i -g "$(node -p "require('./package.json').packageManager.split('+')[0]")"
-      - id: pnpm_store
-        name: Locate pnpm store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - id: pnpm_cache
-        name: Cache pnpm store
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ steps.pnpm_store.outputs.path }}
-          key: ${{ runner.os }}-${{ runner.arch }}-pnpm-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml') }}
-      - run: pnpm install --frozen-lockfile
+          cache: true
+          run-install: false
+      - run: vp install --frozen-lockfile
       - name: Maintain version PR without publishing
         run: node scripts/release.ts pr
         env:

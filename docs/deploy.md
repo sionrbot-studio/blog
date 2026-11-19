@@ -14,18 +14,14 @@ Set `site.url` in `src/config.ts` to your production URL. It is used for canonic
 
 ## Requirements
 
-- Node.js pinned in `package.json#devEngines.runtime`. Keep `pnpm-workspace.yaml#nodeVersion` aligned with this version for dependency engine checks. Vite+ selects the runtime from `package.json`.
-- pnpm 11, pinned in `package.json#packageManager`. Vite+ selects this version automatically. Without Vite+, install the declared Node.js version and the exact pnpm version:
-
-```sh
-npm i -g "$(node -p "require('./package.json').packageManager.split('+')[0]")"
-```
+- Install the [Vite+ CLI](https://viteplus.dev/guide/global-cli) for local verification. It selects the Node.js runtime and pnpm version pinned in `package.json`.
+- Keep `pnpm-workspace.yaml#nodeVersion` aligned with `package.json#devEngines.runtime` for dependency engine checks.
 
 ## Build
 
 ```sh
-pnpm install
-pnpm build
+vp install
+vp run build
 ```
 
 Output goes to `dist/`.
@@ -81,7 +77,7 @@ An environment-rule rejection requires correcting the environment configuration
 first, then using the same **Re-run all jobs** procedure.
 
 Use the workflow's deployment URL to open the site. The Chinese UI is under
-`/blog/zh/`. Preview locally with `pnpm preview` and open the same
+`/blog/zh/`. Preview locally with `vp run preview` and open the same
 `/blog/` prefix. GitHub Pages serves the generated root `404.html` for
 unknown URLs; it does not automatically choose the Chinese error page.
 
@@ -109,13 +105,13 @@ GitHub Pages. The preparation job uses the same build and verification steps bef
 
 ```sh
 export SITE_URL=https://sionrbot-blog.pgsnotfound404.workers.dev
-pnpm build
-pnpm exec vp test --project build tests/build/base-path.test.ts tests/build/routes.test.ts tests/build/seo.test.ts
+vp run build
+vp test --project build tests/build/base-path.test.ts tests/build/routes.test.ts tests/build/seo.test.ts
 node scripts/check-production-output.ts dist "$SITE_URL"
 rm -rf .cloudflare/output
-pnpm exec cf build
+vp exec cf build
 test -d .cloudflare/output/v1
-pnpm exec cf deploy --prebuilt --dry-run
+vp exec cf deploy --prebuilt --dry-run
 ```
 
 Production deployment goes through the shared release workflow. CI receives
@@ -129,21 +125,28 @@ Worker name and static routing. Both the dry-run and production deployment use
 Unknown URLs return the generated root `404.html` with HTTP 404. Chinese pages
 remain under `/zh/`; missing Chinese paths also use the root error page.
 
-## Cloudflare Pages
+## Hosting provider presets
 
-Build command: `pnpm build`. Output directory: `dist`.
+Configure the provider to install development dependencies before building.
+The build commands below use the project-local `vp` installed with those
+dependencies. Use `vp run build` when the Vite+ CLI is already on the build
+environment's PATH.
+
+### Cloudflare Pages
+
+Build command: `./node_modules/.bin/vp run build`. Output directory: `dist`.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sionrbot/blog)
 
-## Vercel
+### Vercel
 
-Framework preset: Astro. Build command: `pnpm build`. Output directory: `dist`.
+Framework preset: Astro. Build command: `./node_modules/.bin/vp run build`. Output directory: `dist`.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/sionrbot/blog)
 
-## Netlify
+### Netlify
 
-Build command: `pnpm build`. Publish directory: `dist`.
+Build command: `./node_modules/.bin/vp run build`. Publish directory: `dist`.
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/sionrbot/blog)
 

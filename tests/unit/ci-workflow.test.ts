@@ -33,26 +33,26 @@ function execute(scope: string | undefined, failCommand?: string) {
 
 test('documentation verification runs formatting and omits production checks', () => {
   const { commands } = execute('docs');
-  expect(commands).toContain('pnpm install --frozen-lockfile');
-  expect(commands).toContain('pnpm exec vp fmt --check');
-  expect(commands).not.toContain('pnpm run check');
-  expect(commands).not.toContain('pnpm run build');
+  expect(commands).toContain('vp install --frozen-lockfile');
+  expect(commands).toContain('vp fmt --check');
+  expect(commands).not.toContain('vp run check');
+  expect(commands).not.toContain('vp run build');
   expect(commands.some((command) => command.includes('test:'))).toBe(false);
 });
 
 test.each(['full', undefined, 'unexpected'])('scope %s retains full verification', (scope) => {
   const { commands } = execute(scope);
-  expect(commands).toContain('pnpm run check');
-  expect(commands).toContain('pnpm exec vp check');
-  expect(commands).toContain('pnpm run build');
-  expect(commands).toContain('pnpm run test:e2e -- --variant production-path --target desktop');
-  expect(commands).not.toContain('pnpm exec vp fmt --check');
+  expect(commands).toContain('vp run check');
+  expect(commands).toContain('vp check');
+  expect(commands).toContain('vp run build');
+  expect(commands).toContain('vp run test:e2e --variant production-path --target desktop');
+  expect(commands).not.toContain('vp fmt --check');
 });
 
 test.each([
-  ['docs', 'pnpm exec vp fmt --check'],
-  ['full', 'pnpm run check'],
-  ['full', 'pnpm install --frozen-lockfile'],
+  ['docs', 'vp fmt --check'],
+  ['full', 'vp run check'],
+  ['full', 'vp install --frozen-lockfile'],
 ])('a failed %s check cannot be converted to a successful job', (scope, command) => {
   const result = execute(scope, command);
   expect(result.failed).toBe(true);
