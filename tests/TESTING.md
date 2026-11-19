@@ -127,8 +127,11 @@ preview journey. The runner checks an explicit `SITE_URL` against the existing h
 canonical and gives preview the same deployment URL. Rebuild without the override
 after root-path browser runs, including failures, before default build tests.
 
-Linux CI uses a digest-pinned Playwright container with browsers and system
-dependencies preinstalled. Browser shards pull the image while the Ubuntu host
+Linux CI pulls digest-pinned subsets of the official Playwright Noble amd64 layers.
+Chromium-only shards omit Firefox and WebKit; shards using WebKit omit Firefox
+and retain Chromium and FFmpeg. Both profiles retain the upstream system libraries
+and WenQuanYi font. A loopback nginx endpoint serves OCI metadata; Docker fetches
+the selected compressed layers directly from Microsoft and verifies their digests. Browser shards pull the image while the Ubuntu host
 checks out the candidate and prepares the locked toolchain and dependencies.
 The container mounts the workspace and toolchain, and the setup budget includes
 waiting for the pull, starting the container and verifying its browsers.

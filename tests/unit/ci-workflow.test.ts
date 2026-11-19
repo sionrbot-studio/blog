@@ -48,7 +48,10 @@ test('documentation verification keeps the formatting job and skips full-only ch
 
 test('merge groups select full verification without consulting the PR selector', () => {
   const scopeJob = workflow.split('\n  scope:\n')[1].split('\n  format:\n')[0];
-  const select = scopeJob.split('- id: select\n        run: |\n')[1].trimEnd();
+  const select = scopeJob
+    .split('- id: select\n        run: |\n')[1]
+    .split('\n      - ')[0]
+    .trimEnd();
   const directory = mkdtempSync(join(tmpdir(), 'ci-scope-'));
   const output = join(directory, 'output');
   try {

@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 1
     outputs:
       scope: ${{ steps.select.outputs.scope }}
+      browser-images: ${{ steps.images.outputs.profiles }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -38,6 +39,13 @@ jobs:
           else
             node scripts/ci-scope.ts
           fi
+
+      - id: images
+        name: Resolve pinned browser image profiles
+        if: steps.select.outputs.scope != 'docs'
+        run: |
+          profiles=$(python3 scripts/ci-playwright-images.py)
+          echo "profiles=$profiles" >> "$GITHUB_OUTPUT"
 
   format:
     needs: scope
@@ -176,7 +184,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
-      PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      IMAGE_PROFILE: ${{ toJSON(fromJSON(needs.scope.outputs.browser-images)[contains(matrix.target, 'webkit') && 'both' || 'chromium']) }}
     strategy:
       fail-fast: false
       matrix:
@@ -191,11 +199,20 @@ jobs:
     steps:
       - name: Start pulling the pinned browser image
         run: |
+          PLAYWRIGHT_IMAGE=$(jq -r .image <<< "$IMAGE_PROFILE")
+          echo "PLAYWRIGHT_IMAGE=$PLAYWRIGHT_IMAGE" >> "$GITHUB_ENV"
+          echo "Compressed image size: $(jq -r .bytes <<< "$IMAGE_PROFILE") bytes"
           mkfifo "$RUNNER_TEMP/browser-pull-status"
           (
             start=$(date +%s%3N)
-            status=0
-            docker pull "$PLAYWRIGHT_IMAGE" || status=$?
+            set +e
+            (
+              set -e
+              jq -r .nginx <<< "$IMAGE_PROFILE" | base64 --decode > "$RUNNER_TEMP/browser-registry.conf"
+              nginx -p "$RUNNER_TEMP/" -c "$RUNNER_TEMP/browser-registry.conf" -e stderr
+              docker pull --platform linux/amd64 "$PLAYWRIGHT_IMAGE"
+            )
+            status=$?
             echo "Browser image pull: $(( $(date +%s%3N) - start )) ms"
             echo "$status" > "$RUNNER_TEMP/browser-pull-status"
           ) </dev/null > "$RUNNER_TEMP/browser-pull.log" 2>&1 &
@@ -224,7 +241,8 @@ jobs:
       - id: browsers
         name: Verify preinstalled browser versions
         run: |
-          docker exec -i ci-browser vp exec node --input-type=module <<'NODE'
+          docker exec ci-browser sh -ec 'test "$(fc-match -f "%{file}" "WenQuanYi Zen Hei")" = /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
+          docker exec -i ci-browser vp exec node --input-type=module - ${{ contains(matrix.target, 'webkit') && 'both' || 'chromium' }} <<'NODE'
           import { createRequire } from 'node:module';
           import { accessSync, constants } from 'node:fs';
           const require = createRequire(import.meta.url);
@@ -232,7 +250,8 @@ jobs:
           const { version } = webRequire('playwright-core/package.json');
           if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
           const { chromium, webkit } = webRequire('playwright-core');
-          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
+          const engines = process.argv[2] === 'both' ? [chromium, webkit] : [chromium];
+          for (const browser of engines) accessSync(browser.executablePath(), constants.X_OK);
           NODE
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - if: matrix.variant == 'default'
