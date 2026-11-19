@@ -6,6 +6,13 @@ Versions 1.0.0–1.4.1 below describe the upstream
 [Pilcrow theme](https://github.com/ondelva/astro-theme-pilcrow/releases).
 Sionrbot personal blog's own releases start at 1.5.0; upstream tags and releases are not republished here.
 
+## [1.10.2](https://github.com/sionrbot-studio/blog/compare/v1.10.1...v1.10.2) (2026-11-19)
+
+### Bug Fixes
+
+- **release:** verify the Pages artifact at both live sites ([#138](https://github.com/sionrbot-studio/blog/issues/138)) ([4772c25](https://github.com/sionrbot-studio/blog/commit/4772c25a8986d1569a80bcd867a59f22c7733dcc))
+- **search:** lock page scrolling while the dialog is open ([#137](https://github.com/sionrbot-studio/blog/issues/137)) ([991dd98](https://github.com/sionrbot-studio/blog/commit/991dd98d109c4c2ecea078e5d4317d89097dc03e))
+
 ## [1.10.1](https://github.com/sionrbot/blog/compare/v1.10.0...v1.10.1) (2026-11-18)
 
 ### Bug Fixes
