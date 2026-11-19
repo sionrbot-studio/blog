@@ -146,20 +146,21 @@ jobs:
     if: needs.scope.outputs.scope != 'docs'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
-    container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
-      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { variant: default, target: desktop }
-          - { variant: default, target: narrow }
-          - { variant: default, target: webkit }
-          - { variant: i18n, target: 'desktop,narrow,webkit' }
-          - { variant: configured-forms, target: 'desktop,narrow,webkit' }
-          - { variant: rendering, target: 'desktop,narrow,webkit' }
-          - { variant: production-path, target: desktop }
+          - { variant: default, target: desktop, engines: chromium }
+          - { variant: default, target: narrow, engines: chromium }
+          - { variant: default, target: webkit, engines: webkit }
+          - { variant: i18n, target: 'desktop,narrow,webkit', engines: 'chromium webkit' }
+          - {
+              variant: configured-forms,
+              target: 'desktop,narrow,webkit',
+              engines: 'chromium webkit',
+            }
+          - { variant: rendering, target: 'desktop,narrow,webkit', engines: 'chromium webkit' }
+          - { variant: production-path, target: desktop, engines: chromium }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -167,20 +168,10 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/dependencies
         with:
-          environment: playwright-1.65.0-noble
-      - id: browsers
-        name: Verify preinstalled browser versions
-        run: |
-          node --input-type=module <<'NODE'
-          import { createRequire } from 'node:module';
-          import { accessSync, constants } from 'node:fs';
-          const require = createRequire(import.meta.url);
-          const webRequire = createRequire(require.resolve('@e2e-dev/web'));
-          const { version } = webRequire('playwright-core/package.json');
-          if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
-          const { chromium, webkit } = webRequire('playwright-core');
-          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
-          NODE
+          environment: ubuntu-24.04
+      - uses: ./.github/actions/playwright
+        with:
+          engines: ${{ matrix.engines }}
       - if: matrix.variant == 'default'
         run: vp run build
       - run: vp run test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}

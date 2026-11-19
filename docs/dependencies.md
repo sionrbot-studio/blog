@@ -135,7 +135,8 @@ Review bot PRs with the same `verify` and `title` requirements as other changes.
   the mapper. [typescript-eslint dependency support](https://typescript-eslint.io/users/dependency-versions/#typescript)
 - When `@e2e-dev/web` changes its Playwright dependency, update the matching CI
   container version, digest, and explicit version assertion in
-  `.github/workflows/ci.yml` and `.github/workflows/release.yml` together.
+  `.github/workflows/release.yml`. PR CI resolves the browser versions from the
+  installed web engine and verifies that each selected engine launches.
 - Node.js runtime pins, pnpm tool-version pins, copied font files, and CI tools
   invoked with `vp dlx` require separate review. This npm configuration does not
   promise to maintain them. The separate `github-actions` entry maintains action

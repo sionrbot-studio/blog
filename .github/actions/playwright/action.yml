@@ -1,0 +1,67 @@
+name: Prepare Playwright browsers
+description: Restore the browsers pinned by the installed e2e web engine and verify they launch
+inputs:
+  engines:
+    description: Space-separated Chromium and WebKit browser names
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: version
+      name: Resolve the pinned Playwright version
+      shell: bash
+      run: |
+        node --input-type=module <<'NODE'
+        import { appendFileSync } from 'node:fs';
+        import { createRequire } from 'node:module';
+
+        const require = createRequire(import.meta.url);
+        const webRequire = createRequire(require.resolve('@e2e-dev/web'));
+        const { version } = webRequire('playwright-core/package.json');
+        appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+        NODE
+        echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/playwright-browsers" >> "$GITHUB_ENV"
+    - id: browsers
+      name: Restore pinned browsers
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/playwright-browsers
+        key: playwright-v1-ubuntu24-${{ runner.arch }}-${{ steps.version.outputs.version }}-${{ inputs.engines }}
+    - name: Install WebKit system dependencies
+      if: contains(inputs.engines, 'webkit')
+      shell: bash
+      run: vp exec e2e-web install-deps webkit
+    - name: Install pinned browsers on a cache miss
+      if: steps.browsers.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ENGINES: ${{ inputs.engines }}
+      run: |
+        read -r -a engines <<< "$ENGINES"
+        vp exec e2e-web install --only-shell --no-progress "${engines[@]}"
+    - name: Verify selected browsers launch
+      shell: bash
+      env:
+        ENGINES: ${{ inputs.engines }}
+      run: |
+        node --input-type=module <<'NODE'
+        import { createRequire } from 'node:module';
+
+        const require = createRequire(import.meta.url);
+        const webRequire = createRequire(require.resolve('@e2e-dev/web'));
+        const playwright = webRequire('playwright-core');
+        await Promise.all(process.env.ENGINES.split(' ').map(async (engine) => {
+          const browser = await playwright[engine].launch();
+          try {
+            console.log(`${engine} ${browser.version()} launched successfully`);
+          } finally {
+            await browser.close();
+          }
+        }));
+        NODE
+    - name: Save browsers from main
+      if: steps.browsers.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/playwright-browsers
+        key: ${{ steps.browsers.outputs.cache-primary-key }}

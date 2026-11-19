@@ -5,21 +5,25 @@ on:
 permissions:
   contents: read
 jobs:
-  dependencies:
-    runs-on: ubuntu-latest
+  browsers:
+    needs: host
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
-    container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
-      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        engines: [chromium, webkit, 'chromium webkit']
     steps:
-      - id: checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           filter: blob:none
       - uses: ./.github/actions/dependencies
         with:
-          environment: playwright-1.65.0-noble
+          environment: ubuntu-24.04
+      - uses: ./.github/actions/playwright
+        with:
+          engines: ${{ matrix.engines }}
   host:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
