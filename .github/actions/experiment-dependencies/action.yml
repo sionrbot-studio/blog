@@ -1,0 +1,27 @@
+name: Install locked dependencies
+description: Restore the installed tree from an exact main-branch cache
+inputs:
+  environment:
+    description: Runner image and workspace layout
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+      with:
+        cache-toolchain: true
+        cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ci/cache-experiment' }}
+        run-install: false
+    - id: modules
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: node_modules
+        key: modules-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.environment }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'patches/**', '.github/actions/dependencies/action.yml') }}
+    - if: steps.modules.outputs.cache-hit != 'true'
+      shell: bash
+      run: vp install --frozen-lockfile
+    - if: steps.modules.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/ci/cache-experiment'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: node_modules
+        key: ${{ steps.modules.outputs.cache-primary-key }}

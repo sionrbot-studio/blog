@@ -1,7 +1,7 @@
-name: Warm CI dependencies
+name: Measure isolated cache warming
 on:
   push:
-    branches: [main]
+    branches: [ci/cache-experiment]
 permissions:
   contents: read
 jobs:
@@ -18,10 +18,10 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
-      - uses: ./.github/actions/dependencies
+      - uses: ./.github/actions/experiment-dependencies
         with:
           environment: ubuntu-24.04
-      - uses: ./.github/actions/playwright
+      - uses: ./.github/actions/experiment-playwright
         with:
           engines: ${{ matrix.engines }}
   host:
@@ -33,6 +33,6 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
-      - uses: ./.github/actions/dependencies
+      - uses: ./.github/actions/experiment-dependencies
         with:
           environment: ubuntu-24.04
