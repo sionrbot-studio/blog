@@ -92,7 +92,7 @@ jobs:
         run: |
           vp run check
           vp check
-          vp run lint
+          vp run lint:astro
           vp run i18n:check
           vp run test:unit
           vp run test:unit:tz
