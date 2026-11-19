@@ -15,7 +15,7 @@ export function detectCiScope(
   eventName: string | undefined,
   eventPath: string | undefined,
   warn: (message: string) => void = console.warn,
-): 'docs' | 'full' {
+): 'docs' | 'unit' | 'full' {
   if (eventName !== 'pull_request') return 'full';
   try {
     if (!eventPath) throw new Error('Missing pull request event');
@@ -47,7 +47,21 @@ export function detectCiScope(
     const diff = git('diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD', '--');
     if (!diff.endsWith('\0')) return 'full';
     const paths = diff.slice(0, -1).split('\0');
-    return paths.every(isDevelopmentDocument) ? 'docs' : 'full';
+    if (paths.every(isDevelopmentDocument)) return 'docs';
+    if (!paths.every((path) => /^tests\/unit\/(?:[\w.-]+\/)*[\w.-]+\.test\.ts$/u.test(path)))
+      return 'full';
+    // Independently compare every other tracked path if the file list suggests unit-only.
+    git(
+      'diff',
+      '--quiet',
+      '--no-ext-diff',
+      'HEAD^1',
+      'HEAD',
+      '--',
+      '.',
+      ':(exclude,glob)tests/unit/**/*.test.ts',
+    );
+    return 'unit';
   } catch {
     warn('Could not establish a complete documentation-only change; running full verification.');
     return 'full';

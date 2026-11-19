@@ -111,7 +111,7 @@ jobs:
 
   build:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -130,7 +130,7 @@ jobs:
 
   contracts:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     strategy:
@@ -164,7 +164,7 @@ jobs:
 
   browser:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     strategy:
@@ -224,9 +224,11 @@ jobs:
           node --input-type=module <<'NODE'
           const jobs = JSON.parse(process.env.NEEDS);
           const scope = jobs.scope.outputs.scope;
-          if (!['docs', 'full'].includes(scope)) process.exit(1);
+          if (!['docs', 'unit', 'full'].includes(scope)) process.exit(1);
           for (const [name, job] of Object.entries(jobs)) {
-            const expected = scope === 'docs' && !['scope', 'format'].includes(name) ? 'skipped' : 'success';
+            const omitted = (scope === 'docs' && !['scope', 'format'].includes(name))
+              || (scope === 'unit' && ['build', 'browser', 'contracts'].includes(name));
+            const expected = omitted ? 'skipped' : 'success';
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }
           NODE

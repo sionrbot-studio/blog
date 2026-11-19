@@ -175,3 +175,15 @@ test('CLI emits fallback output and fails if it cannot write the required output
     }).status,
   ).not.toBe(0);
 });
+
+test('unit test changes narrow PR checks, mixed changes keep full coverage', () => {
+  expect(repository((write) => write('tests/unit/tooling/a.test.ts')).scope()).toBe('unit');
+  expect(repository((write) => write('tests/unit/a.test.ts')).scope()).toBe('unit');
+  expect(
+    repository((write) => {
+      write('tests/unit/tooling/a.test.ts');
+      write('src/example.ts');
+    }).scope(),
+  ).toBe('full');
+  expect(repository((write) => write('tests/support/helper.ts')).scope()).toBe('full');
+});

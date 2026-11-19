@@ -246,7 +246,7 @@ in these artifacts or CI, rather than adding execution history to these guides.
 ## CI and coverage boundaries
 
 [CI](../.github/workflows/ci.yml) checks documentation formatting on documentation-only
-PRs. Full verification runs formatting, lint, types, unit/timezone tests, builds,
+PRs. Changes confined to unit test files run formatting, types, lint and the unit/timezone job. Full verification runs formatting, lint, types, unit/timezone tests, builds,
 link checks, build contract shards and browser variants in parallel. Manual runs
 use the full suite. Each shard builds the root baseline it consumes. The default
 browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
