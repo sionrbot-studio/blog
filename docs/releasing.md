@@ -293,7 +293,7 @@ For a local read-only preview of version PR changes, supply
 `GITHUB_REPOSITORY=sionrbot/blog` and a read-capable `GITHUB_TOKEN` through the
 environment, then run `node scripts/release.ts check`. The `pr` command maintains
 the version PR with write credentials; it does not publish a Release. Credentials
-must not be saved in tracked files. Run `pnpm run test:unit` for release and
+must not be saved in tracked files. Run `vp run test:unit` for release and
 recovery contracts without GitHub writes.
 
 ## Version history origin

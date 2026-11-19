@@ -14,8 +14,9 @@ Sionrbot personal blog is a personal blog built with Astro, extensively customiz
 
 ## Quick start
 
-Use the Node.js runtime and pnpm version pinned in `package.json`; the workspace
-also records the Node.js pin in `pnpm-workspace.yaml`. Install dependencies and start Astro:
+Install the [Vite+ CLI](https://viteplus.dev/guide/global-cli). It selects the
+Node.js runtime and pnpm version pinned in `package.json`. The workspace also
+records the Node.js pin in `pnpm-workspace.yaml`. Install dependencies and start Astro:
 
 ```sh
 vp install
@@ -26,16 +27,14 @@ Vite+ provides Vite, Oxlint, and Oxfmt; its version is pinned in the workspace
 catalog in `pnpm-workspace.yaml`. Its lint and format settings live in
 `vite.config.ts`; Astro application settings stay in `astro.config.mjs`.
 
-- `pnpm check` generates Astro content collection types and runs its template-aware type checker.
+- `vp run check` generates Astro content collection types and runs its template-aware type checker.
   Run it before the Vite+ checks on a fresh checkout.
-- `pnpm exec vp check` checks formatting, lint, and TypeScript through Vite+.
-- `pnpm lint` runs Oxlint and the retained ESLint rules, including Astro template checks
+- `vp check` checks formatting, lint, and TypeScript through Vite+.
+- `vp run lint` runs Oxlint and the retained ESLint rules, including Astro template checks
   that Oxlint does not enforce.
-- `pnpm format` formats with Oxfmt, including Astro and Tailwind class sorting.
-- `pnpm dev`, `pnpm build`, and `pnpm preview` keep using Astro. With a global Vite+
-  CLI, use `vp run dev`, `vp run build`, and `vp run preview` for these scripts.
-  The built-in `vp dev` / `vp build` / `vp preview` commands run plain Vite and do
-  not load Astro's application pipeline.
+- `vp fmt` formats with Oxfmt, including Astro and Tailwind class sorting.
+- `vp run dev`, `vp run build`, and `vp run preview` invoke the project's Astro scripts.
+  The built-in `vp dev`, `vp build`, and `vp preview` commands run plain Vite.
 
 ## Configure
 

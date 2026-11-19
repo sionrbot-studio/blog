@@ -159,10 +159,10 @@ vp run check
 vp check
 vp run lint
 vp run build
-pnpm run i18n:check
-pnpm run test:unit
-pnpm run test:unit:tz
-pnpm run test:build
+vp run i18n:check
+vp run test:unit
+vp run test:unit:tz
+vp run test:build
 ```
 
 另运行覆盖上述用户流程的相关 E2E，并在交付报告中记录实际结果和报告路径。测试文档定义操作方法，不保存某次执行状态。

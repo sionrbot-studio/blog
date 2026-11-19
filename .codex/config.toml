@@ -2,9 +2,9 @@
 url = "https://mcp.docs.astro.build/mcp"
 
 [mcp_servers.e2e]
-command = "npx"
-args = ["e2e", "mcp"]
+command = "vp"
+args = ["exec", "e2e", "mcp"]
 
 [mcp_servers.x18n]
-command = "pnpm"
+command = "vp"
 args = ["exec", "x18n", "mcp"]
