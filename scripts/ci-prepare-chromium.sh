@@ -16,10 +16,7 @@ install_font() {
   [[ "$font_match" == /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc ]]
 }
 
-install_font &
-font_pid=$!
-bash scripts/ci-install-playwright-tool.sh chromium
-wait "$font_pid"
+install_font
 
 node --input-type=module <<'NODE'
 import { createRequire } from 'node:module';
