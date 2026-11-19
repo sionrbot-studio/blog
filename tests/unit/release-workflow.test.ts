@@ -238,6 +238,18 @@ describe('fixed-source release wiring', () => {
     );
   });
 
+  test('verifies the deployed Pages URL before checking the personal mirror', () => {
+    const source = steps.find((step) => step.id === 'pages_smoke')!.body;
+    expect(source).toContain('PAGE_URL: ${{ steps.pages_deploy.outputs.page_url }}');
+    expect(source).toContain('node scripts/check-live-pages.ts source "$PAGE_URL"');
+    expect(source).toContain('node scripts/smoke-site.ts "$PAGE_URL"');
+    const mirror = steps.find((step) => step.id === 'mirror_verify')!.body;
+    expect(mirror).toContain('MIRROR_BLOG_DIR: ${{ runner.temp }}/personal-site/blog');
+    expect(mirror).toMatch(
+      /verify-personal-pages\.sh "\$TARGET_SHA"\s+node scripts\/check-live-pages\.ts personal https:\/\/sionrbot\.github\.io\/blog\//,
+    );
+  });
+
   test('builds, verifies and transfers only this run’s Workers v1 output', () => {
     const build = steps.find((step) => step.id === 'workers_build')!.body;
     expect(build).toMatch(
