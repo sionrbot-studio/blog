@@ -64,5 +64,6 @@ test('required job remains unconditional and checkout includes merge parents', (
   expect(workflow).toContain('  pull_request:');
   expect(workflow).toContain('  workflow_dispatch:');
   expect(workflow.split('    steps:')[0]).not.toMatch(/^    if:/m);
-  expect(workflow).toContain('fetch-depth: 2');
+  expect(workflow).toContain('fetch-depth: 0');
+  expect(workflow).toContain('filter: blob:none');
 });
