@@ -38,6 +38,11 @@ catalog in `pnpm-workspace.yaml`. Its lint and format settings live in
 - `vp run dev`, `vp run build`, and `vp run preview` invoke the project's Astro scripts.
   The built-in `vp dev`, `vp build`, and `vp preview` commands run plain Vite.
 
+`vp install` registers the Vite+ pre-push hook. From a clean checkout of the commit
+you are pushing, Git checks formatting, lint, and TypeScript for the changed files.
+Astro template changes also run the native TypeScript check. On an existing checkout,
+run `vp hooks enable` to install the dispatcher and `vp hooks status` to verify it.
+
 ## Configure
 
 Edit `src/config.ts`. Everything site-specific lives there: name, URL, navigation, social links, SEO defaults.
