@@ -1,0 +1,21 @@
+name: Check environment setup budget
+description: Check elapsed time from runner allocation through environment setup
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        JOB_ID: ${{ job.check_run_id }}
+        TOKEN: ${{ github.token }}
+      run: |
+        node --input-type=module <<'NODE'
+        const { GITHUB_API_URL, GITHUB_REPOSITORY, JOB_ID, TOKEN, SETUP_FINISHED } = process.env;
+        const response = await fetch(GITHUB_API_URL + '/repos/' + GITHUB_REPOSITORY + '/actions/jobs/' + JOB_ID, {
+          headers: { Authorization: 'Bearer ' + TOKEN },
+        });
+        if (!response.ok) throw new Error('Cannot verify job timing: HTTP ' + response.status);
+        const { started_at } = await response.json();
+        const elapsed = Number(SETUP_FINISHED) - Date.parse(started_at);
+        console.log('Environment setup:', elapsed, 'ms (budget < 30000 ms)');
+        if (!(elapsed >= 0 && elapsed < 30000)) process.exit(1);
+        NODE

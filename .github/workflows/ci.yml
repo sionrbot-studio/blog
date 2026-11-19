@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.run_id }}
@@ -41,7 +42,9 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp fmt --check
+      - uses: ./.github/actions/check-setup-budget
 
   lint:
     needs: scope
@@ -57,7 +60,9 @@ jobs:
         with:
           environment: ubuntu-24.04
       - run: vp run astro sync
-      - run: vp run lint
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: bash scripts/ci-budget.sh 5000 vp run --no-cache lint
+      - uses: ./.github/actions/check-setup-budget
 
   types:
     needs: scope
@@ -72,8 +77,9 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
-      - run: vp run check
-      - run: vp check
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: bash scripts/ci-budget.sh 5000 bash -ec 'vp run --no-cache check && vp check'
+      - uses: ./.github/actions/check-setup-budget
 
   unit:
     needs: scope
@@ -88,9 +94,11 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp run i18n:check
-      - run: vp run test:unit
-      - run: vp run test:unit:tz
+      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit
+      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit:tz
+      - uses: ./.github/actions/check-setup-budget
 
   build:
     needs: scope
@@ -105,9 +113,11 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp run build
       - name: Verify internal links
         run: vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
+      - uses: ./.github/actions/check-setup-budget
 
   contracts:
     needs: scope
@@ -126,8 +136,9 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp run build
-      - run: vp run test:build --shard=${{ matrix.shard }}/2
+      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:build --shard=${{ matrix.shard }}/2
       - name: Preserve diagnostic reports
         if: ${{ always() }}
         continue-on-error: true
@@ -140,6 +151,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
+      - uses: ./.github/actions/check-setup-budget
 
   browser:
     needs: scope
@@ -172,9 +184,10 @@ jobs:
       - uses: ./.github/actions/playwright
         with:
           engines: ${{ matrix.engines }}
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - if: matrix.variant == 'default'
         run: vp run build
-      - run: vp run test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}
+      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}
       - name: Preserve diagnostic reports
         if: ${{ always() }}
         continue-on-error: true
@@ -187,6 +200,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
+      - uses: ./.github/actions/check-setup-budget
 
   verify:
     if: always()
