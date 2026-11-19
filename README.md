@@ -27,9 +27,11 @@ Vite+ provides Vite, Oxlint, and Oxfmt; its version is pinned in the workspace
 catalog in `pnpm-workspace.yaml`. Its lint and format settings live in
 `vite.config.ts`; Astro application settings stay in `astro.config.mjs`.
 
-- `vp run check` generates Astro content collection types and runs its template-aware type checker.
-  Run it before the Vite+ checks on a fresh checkout.
-- `vp check` checks formatting, lint, and TypeScript through Vite+.
+- `vp run check` runs `astro sync` to generate content collection types, then uses native
+  TypeScript and the Astro content mapper to check TypeScript and `.astro` files. Run it before
+  the Vite+ checks on a fresh checkout.
+- `vp check` checks formatting, lint, and TypeScript through Vite+, using tsrs for type checks.
+  Run `vp run check` for type errors in `.astro` files.
 - `vp run lint` runs Oxlint across JavaScript and TypeScript, then runs ESLint on `.astro` files
   for template rules, scope checks, and fixes that account for writes in template expressions.
 - `vp fmt` formats with Oxfmt, including Astro and Tailwind class sorting.
