@@ -28,16 +28,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 2
-      - id: setup_vp
-        uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+      - uses: ./.github/actions/dependencies
         with:
-          cache: true
-          run-install: false
+          environment: playwright-1.65.0-noble
       - id: scope
         name: Select verification scope
         run: node scripts/ci-scope.ts
-      - id: dependencies
-        run: vp install --frozen-lockfile
       - id: vp_task_cache
         name: Restore vp task cache
         if: ${{ steps.scope.outputs.scope != 'docs' }}
