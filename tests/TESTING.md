@@ -297,6 +297,8 @@ Search dialog checks cover pointer and keyboard opening, native focus restoratio
 and the inability to focus background controls while the modal is open. Tab may
 move focus to browser chrome; this is permitted by native modal behavior.
 On desktop Chromium, narrow Chromium and WebKit, the backdrop scroll test sends
-wheel input while search is open and after it closes. It checks that the page
+wheel input while search is open and after it closes. It checks that the open
+dialog’s backdrop computes to `overscroll-behavior: contain` and that the
+dialog remains visible after wheel input. It also checks that the page
 holds its position through dismissal, focus returns to the opener, and the page
 responds to the next wheel input.
