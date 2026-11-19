@@ -151,3 +151,10 @@ test.each(['lint', 'types', 'unit'])('unit-only changes require %s to run', (job
 test.each(['build', 'contracts', 'browser'])('full scope rejects a skipped %s job', (job) => {
   expect(verify('full', { [job]: 'skipped' })).toBe(1);
 });
+
+test.each(['success', 'failure', 'cancelled', null])(
+  'unit-only verification requires an explicit skip for omitted browser work, got %s',
+  (result) => {
+    expect(verify('unit', { browser: result })).toBe(1);
+  },
+);
