@@ -12,15 +12,24 @@ runs:
         cache-toolchain: true
         cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run-install: false
+    - id: inputs
+      shell: bash
+      env:
+        CACHE_ENVIRONMENT: ${{ inputs.environment }}
+      run: node "$GITHUB_ACTION_PATH/cache-key.mjs"
     - id: modules
+      if: steps.inputs.outputs.cache_id != ''
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: node_modules
-        key: modules-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.environment }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', 'patches/**', '.github/actions/dependencies/action.yml') }}
+        key: ${{ steps.inputs.outputs.cache_id }}
     - if: steps.modules.outputs.cache-hit != 'true'
       shell: bash
       run: vp install --frozen-lockfile
-    - if: steps.modules.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    - if: steps.modules.outputs.cache-hit == 'true' && steps.inputs.outputs.register_hooks == 'true'
+      shell: bash
+      run: vp config --no-agent
+    - if: steps.inputs.outputs.cache_id != '' && steps.modules.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: node_modules
