@@ -310,3 +310,21 @@ applies after bootstrap. Existing project history uses the manifest and public
 software Releases, including the explicit recovery boundary described above.
 
 See [Release Please's bootstrap configuration](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md#bootstrapping).
+
+## Personal Pages mirror
+
+After the source Pages deployment and its smoke check both succeed, the independent
+`mirror` job downloads the same run and attempt's checked Pages artifact. It
+rechecks the release candidate before pushing to `sionrbot/sionrbot.github.io`.
+The mirror has a ten-minute job limit, including five minutes for target verification.
+Only `blog/` is replaced. The personal site's root `.nojekyll` and other files
+are preserved. The release summary records the target commit and deployment
+verification result. Identical content reuses the existing target commit.
+
+Before promoting this workflow, set the **PERSONAL_PAGES_TOKEN** Actions secret
+in the source repository's `github-pages` environment. Use a fine-grained personal
+access token owned by `sionrbot`, restricted to `sionrbot/sionrbot.github.io`,
+with **Contents: Read and write**. Keep the personal site's Pages source set to
+`main` and `/ (root)`. The public deployment check uses the exact target SHA.
+While the original project site serves `/blog/`, a successful GET at that URL
+alone cannot identify which repository served the response.
