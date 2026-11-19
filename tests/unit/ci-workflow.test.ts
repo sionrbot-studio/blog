@@ -56,3 +56,11 @@ test('all worker jobs feed the unconditional required gate', () => {
       "if: needs.scope.outputs.scope != 'docs'",
     );
 });
+
+test.each(['lint', 'types', 'unit'])('unit-only changes require %s to run', (job) => {
+  expect(verify('unit', { [job]: 'skipped' })).toBe(1);
+});
+
+test.each(['build', 'contracts', 'browser'])('full scope rejects a skipped %s job', (job) => {
+  expect(verify('full', { [job]: 'skipped' })).toBe(1);
+});
