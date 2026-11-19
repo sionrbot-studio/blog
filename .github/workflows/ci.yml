@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 1
     outputs:
       scope: ${{ steps.select.outputs.scope }}
-      browser-images: ${{ steps.images.outputs.profiles }}
+      browser-image: ${{ steps.images.outputs.profile }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -41,11 +41,11 @@ jobs:
           fi
 
       - id: images
-        name: Resolve pinned browser image profiles
+        name: Resolve pinned WebKit shard image
         if: steps.select.outputs.scope != 'docs'
         run: |
-          profiles=$(python3 scripts/ci-playwright-images.py)
-          echo "profiles=$profiles" >> "$GITHUB_OUTPUT"
+          profile=$(python3 scripts/ci-playwright-images.py)
+          echo "profile=$profile" >> "$GITHUB_OUTPUT"
 
   format:
     needs: scope
@@ -184,7 +184,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
-      IMAGE_PROFILE: ${{ toJSON(fromJSON(needs.scope.outputs.browser-images)[contains(matrix.target, 'webkit') && 'both' || 'chromium']) }}
+      IMAGE_PROFILE: ${{ needs.scope.outputs.browser-image }}
     strategy:
       fail-fast: false
       matrix:
@@ -198,6 +198,7 @@ jobs:
           - { variant: production-path, target: desktop }
     steps:
       - name: Start pulling the pinned browser image
+        if: contains(matrix.target, 'webkit')
         run: |
           PLAYWRIGHT_IMAGE=$(jq -r .image <<< "$IMAGE_PROFILE")
           echo "PLAYWRIGHT_IMAGE=$PLAYWRIGHT_IMAGE" >> "$GITHUB_ENV"
@@ -224,6 +225,7 @@ jobs:
         with:
           environment: ubuntu-24.04
       - name: Start the prepared browser container
+        if: contains(matrix.target, 'webkit')
         run: |
           read -r status < "$RUNNER_TEMP/browser-pull-status"
           cat "$RUNNER_TEMP/browser-pull.log"
@@ -240,9 +242,10 @@ jobs:
             "$PLAYWRIGHT_IMAGE" sleep infinity
       - id: browsers
         name: Verify preinstalled browser versions
+        if: contains(matrix.target, 'webkit')
         run: |
           docker exec ci-browser sh -ec 'test "$(fc-match -f "%{file}" "WenQuanYi Zen Hei")" = /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
-          docker exec -i ci-browser vp exec node --input-type=module - ${{ contains(matrix.target, 'webkit') && 'both' || 'chromium' }} <<'NODE'
+          docker exec -i ci-browser vp exec node --input-type=module - <<'NODE'
           import { createRequire } from 'node:module';
           import { accessSync, constants } from 'node:fs';
           const require = createRequire(import.meta.url);
@@ -250,13 +253,25 @@ jobs:
           const { version } = webRequire('playwright-core/package.json');
           if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
           const { chromium, webkit } = webRequire('playwright-core');
-          const engines = process.argv[2] === 'both' ? [chromium, webkit] : [chromium];
-          for (const browser of engines) accessSync(browser.executablePath(), constants.X_OK);
+          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
           NODE
+      - name: Prepare pinned Chromium on the host
+        if: ${{ !contains(matrix.target, 'webkit') }}
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright-browsers
+        run: |
+          echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          bash scripts/ci-prepare-chromium.sh
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - if: matrix.variant == 'default'
-        run: docker exec ci-browser vp run build
-      - run: bash scripts/ci-budget.sh 60000 docker exec ci-browser vp run --no-cache test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}
+      - name: Run browser shard
+        env:
+          VARIANT: ${{ matrix.variant }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          runner=()
+          if [[ ",$TARGET," == *,webkit,* ]]; then runner=(docker exec ci-browser); fi
+          if [[ "$VARIANT" == default ]]; then "${runner[@]}" vp run build; fi
+          bash scripts/ci-budget.sh 60000 "${runner[@]}" vp run --no-cache test:e2e --variant "$VARIANT" --target "$TARGET"
       - name: Preserve diagnostic reports
         if: ${{ always() }}
         continue-on-error: true

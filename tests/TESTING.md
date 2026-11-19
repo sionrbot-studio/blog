@@ -127,14 +127,14 @@ preview journey. The runner checks an explicit `SITE_URL` against the existing h
 canonical and gives preview the same deployment URL. Rebuild without the override
 after root-path browser runs, including failures, before default build tests.
 
-Linux CI pulls digest-pinned subsets of the official Playwright Noble amd64 layers.
-Chromium-only shards omit Firefox and WebKit; shards using WebKit omit Firefox
-and retain Chromium and FFmpeg. Both profiles retain the upstream system libraries
-and WenQuanYi font. A loopback nginx endpoint serves OCI metadata; Docker fetches
-the selected compressed layers directly from Microsoft and verifies their digests. Browser shards pull the image while the Ubuntu host
-checks out the candidate and prepares the locked toolchain and dependencies.
-The container mounts the workspace and toolchain, and the setup budget includes
-waiting for the pull, starting the container and verifying its browsers.
+Chromium-only CI shards run directly on the Ubuntu host. The locked Playwright
+CLI installs its matching headless shell while the runner restores the
+checksum-pinned WenQuanYi font. Setup includes checking the font and launching Chromium.
+Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
+unused Firefox layer omitted. Docker fetches the layers from Microsoft via local
+OCI metadata while the host checks out the candidate and prepares dependencies.
+The container mounts the workspace and toolchain. Its setup budget includes
+waiting for the pull, starting the container and checking its browsers and font.
 Keep the image and version checks in
 `.github/workflows/ci.yml` and `.github/workflows/release.yml` aligned with `@e2e-dev/web`'s `playwright-core`
 dependency when upgrading it. CI verifies the version and browser executables
