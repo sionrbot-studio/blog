@@ -60,7 +60,9 @@ describe.each(['', '/sionrbot-blog', '/blog'])('deployment base %s', (base) => {
       for (const route of routes) {
         const $ = await readHtml(fixture.dist, `${prefix}${route}`);
         const page = `${base}${prefix}${route}`;
-        expect($('link[type="application/rss+xml"]').attr('href'), page).toBe(`${base}/rss.xml`);
+        const rssFeed = $('head link[rel="alternate"][type="application/rss+xml"]');
+        expect(rssFeed, page).toHaveLength(1);
+        expect(rssFeed.attr('href'), page).toBe(`${base}/rss.xml`);
         expect($('link[rel="sitemap"]').attr('href'), page).toBe(`${base}/sitemap-index.xml`);
         for (const element of $('a[href], link[href], script[src], img[src]').toArray()) {
           const href = $(element).attr('href') ?? $(element).attr('src')!;
