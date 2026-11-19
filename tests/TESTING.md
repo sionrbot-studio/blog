@@ -131,7 +131,7 @@ Chromium-only CI shards run directly on the Ubuntu host. Before checkout, the lo
 CLI starts installing its matching headless shell and FFmpeg. After dependency
 restore, the runner checks the checksum-pinned WenQuanYi font and launches Chromium.
 Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
-Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
+build-time Playwright CLI archive and the Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
 The container starts as soon as the image pull completes and shares its dedicated
 Linux runner’s network namespace. The preview server listens on loopback. Before checkout, each WebKit shard fetches the CLI identified by the
