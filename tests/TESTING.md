@@ -262,7 +262,7 @@ pixel baselines. Lighthouse covers only the pages in its configuration.
 Search dialog checks cover pointer and keyboard opening, native focus restoration,
 and the inability to focus background controls while the modal is open. Tab may
 move focus to browser chrome; this is permitted by native modal behavior.
-Backdrop scroll containment is progressive enhancement: WebKit does not enforce
-`overscroll-behavior` on its non-scrollable backdrop, even though `CSS.supports`
-accepts the property. The dedicated scroll-containment test therefore skips WebKit;
-search interaction and modal focus checks still run on all browser targets.
+On desktop Chromium, narrow Chromium and WebKit, the backdrop scroll test sends
+wheel input while search is open and after it closes. It checks that the page
+holds its position through dismissal, focus returns to the opener, and the page
+responds to the next wheel input.
