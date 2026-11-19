@@ -3,6 +3,14 @@ import { defineConfig } from 'vite-plus';
 
 // ESLint also checks .astro files with the Astro parser and client-side processor.
 export default defineConfig({
+  run: {
+    tasks: {
+      check: 'astro check',
+      'lint:astro': 'eslint "**/*.astro"',
+      'test:unit': 'vp test --project unit',
+      'test:unit:tz': 'node tests/support/run-date-timezones.ts',
+    },
+  },
   test: {
     projects: [
       {

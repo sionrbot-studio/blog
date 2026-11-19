@@ -38,6 +38,14 @@ jobs:
         run: node scripts/ci-scope.ts
       - id: dependencies
         run: vp install --frozen-lockfile
+      - id: vp_task_cache
+        name: Restore vp task cache
+        if: ${{ steps.scope.outputs.scope != 'docs' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules/.vite/task-cache
+          key: ci-vp-task-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ci-vp-task-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Check documentation formatting
         if: ${{ steps.scope.outputs.scope == 'docs' }}
         run: vp fmt --check
@@ -59,6 +67,12 @@ jobs:
       - name: Test date contracts across timezones
         if: ${{ steps.scope.outputs.scope != 'docs' }}
         run: vp run test:unit:tz
+      - name: Save vp task cache
+        if: ${{ steps.scope.outputs.scope != 'docs' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules/.vite/task-cache
+          key: ${{ steps.vp_task_cache.outputs.cache-primary-key }}
       - id: browsers
         if: ${{ steps.scope.outputs.scope != 'docs' }}
         name: Verify preinstalled browser versions
