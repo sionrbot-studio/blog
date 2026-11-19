@@ -127,8 +127,23 @@ preview journey. The runner checks an explicit `SITE_URL` against the existing h
 canonical and gives preview the same deployment URL. Rebuild without the override
 after root-path browser runs, including failures, before default build tests.
 
-Linux CI uses a digest-pinned Playwright container with browsers and system
-dependencies preinstalled. Keep the image and version checks in
+Chromium-only CI shards run directly on the Ubuntu host. Before checkout, the locked Playwright
+CLI starts installing its matching headless shell and FFmpeg. After checkout, it installs and verifies
+the checksum-pinned WenQuanYi font in parallel with dependency restore. The
+runner launches Chromium once its tools, font and dependencies are ready.
+Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
+build-time Playwright CLI archive and the Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
+OCI metadata while the host checks out the candidate and prepares dependencies.
+Each WebKit job applies the layers to a fresh Docker overlay2 store on a 4 GiB
+tmpfs. The pull timer includes starting this job-local daemon and pulling the
+base layer. The container starts as soon as the image pull completes and shares its dedicated
+Linux runner’s network namespace. The preview server listens on loopback. Before checkout, each WebKit shard fetches the CLI identified by the
+candidate lockfile and verifies its SHA-512 digest. In parallel with checkout
+and dependency restore, the CLI installs the pinned Ubuntu WebKit and FFmpeg binaries and, for mixed targets,
+Chromium headless shell. Playwright reads these tools directly from a read-only
+mount in the container. The setup budget includes
+waiting for the pull, starting the container and checking its browsers and font.
+Keep the image and version checks in
 `.github/workflows/ci.yml` and `.github/workflows/release.yml` aligned with `@e2e-dev/web`'s `playwright-core`
 dependency when upgrading it. CI verifies the version and browser executables
 before running tests. Targets are Chromium
@@ -234,6 +249,14 @@ use the full suite. Queue candidates always execute unit and timezone tests unca
 browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
 retain their target sets. The required `verify` job checks every dependency's
 conclusion against the selected scope.
+
+Each verification worker must finish environment setup in under 30 seconds, measured
+from the Actions job start through its setup marker. Lint and the combined type
+checks each have a 5-second budget. The types worker runs the read-only format
+check alongside Astro type generation. It waits for formatting, native TypeScript,
+and the Vite+ lint and type checks within that same budget. Each timed unit, timezone, build-contract and
+browser shard has a 60-second budget. Commands run to completion; reaching a
+budget or failing a command fails the worker and the required gate.
 
 The [release workflow](../.github/workflows/release.yml) repeats core validation
 at the fixed merged version SHA before building and checking both production

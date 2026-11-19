@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.run_id }}
@@ -24,6 +25,9 @@ jobs:
     timeout-minutes: 1
     outputs:
       scope: ${{ steps.select.outputs.scope }}
+      browser-image: ${{ steps.images.outputs.profile }}
+      playwright-version: ${{ steps.images.outputs.version }}
+      playwright-integrity: ${{ steps.images.outputs.integrity }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -38,19 +42,33 @@ jobs:
             node scripts/ci-scope.ts
           fi
 
+      - id: images
+        name: Resolve pinned WebKit shard image
+        if: steps.select.outputs.scope != 'docs'
+        run: |
+          ruby -ryaml -e '
+            lock = YAML.load_file("pnpm-lock.yaml")
+            web = lock.fetch("importers").fetch(".").fetch("devDependencies").fetch("@e2e-dev/web").fetch("version")
+            version = lock.fetch("snapshots").fetch("@e2e-dev/web@#{web}").fetch("dependencies").fetch("playwright-core")
+            integrity = lock.fetch("packages").fetch("playwright-core@#{version}").fetch("resolution").fetch("integrity")
+            puts "version=#{version}", "integrity=#{integrity}"
+          ' >> "$GITHUB_OUTPUT"
+          profile=$(python3 scripts/ci-playwright-images.py)
+          echo "profile=$profile" >> "$GITHUB_OUTPUT"
+
   format:
     needs: scope
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          filter: blob:none
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp fmt --check
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   lint:
     needs: scope
@@ -66,7 +84,10 @@ jobs:
         with:
           environment: ubuntu-24.04
       - run: vp run astro sync
-      - run: vp run lint
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: bash scripts/ci-budget.sh 5000 vp run --no-cache lint
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   types:
     needs: scope
@@ -81,8 +102,10 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
-      - run: vp run check
-      - run: vp check
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: bash scripts/ci-budget.sh 5000 bash scripts/ci-check-types.sh
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   unit:
     needs: scope
@@ -97,9 +120,14 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp run i18n:check
-      - run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit
-      - run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit:tz
+      - id: unit_tests
+        run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit
+      - if: ${{ !cancelled() && steps.unit_tests.outcome != 'skipped' }}
+        run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit:tz
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   build:
     needs: scope
@@ -114,9 +142,12 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp run build
       - name: Verify internal links
         run: vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   contracts:
     needs: scope
@@ -135,8 +166,9 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: vp run build
-      - run: vp run test:build --shard=${{ matrix.shard }}/2
+      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:build --shard=${{ matrix.shard }}/2
       - name: Preserve diagnostic reports
         if: ${{ always() }}
         continue-on-error: true
@@ -149,15 +181,16 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   browser:
     needs: scope
     if: needs.scope.outputs.scope != 'docs'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
-    container:
-      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
-      options: --ipc=host
+    env:
+      IMAGE_PROFILE: ${{ needs.scope.outputs.browser-image }}
     strategy:
       fail-fast: false
       matrix:
@@ -170,29 +203,168 @@ jobs:
           - { variant: rendering, target: 'desktop,narrow,webkit' }
           - { variant: production-path, target: desktop }
     steps:
+      - name: Pull and start the pinned browser image in the background
+        if: contains(matrix.target, 'webkit')
+        run: |
+          PLAYWRIGHT_IMAGE=$(jq -r .image <<< "$IMAGE_PROFILE")
+          echo "PLAYWRIGHT_IMAGE=$PLAYWRIGHT_IMAGE" >> "$GITHUB_ENV"
+          echo "Compressed image size: $(jq -r .bytes <<< "$IMAGE_PROFILE") bytes"
+          export DOCKER_HOST=unix:///run/ci-browser.sock
+          echo "DOCKER_HOST=$DOCKER_HOST" >> "$GITHUB_ENV"
+          mkfifo "$RUNNER_TEMP/browser-start-status"
+          (
+            start=$(date +%s%3N)
+            set +e
+            (
+              set -e
+              data=/run/ci-browser-data
+              sudo mkdir -p "$data"
+              sudo mount -t tmpfs -o size=4G,mode=0700 tmpfs "$data"
+              echo '{"features":{"containerd-snapshotter":false}}' > "$RUNNER_TEMP/browser-daemon.json"
+              sudo dockerd --config-file "$RUNNER_TEMP/browser-daemon.json" \
+                --host "$DOCKER_HOST" --data-root "$data" --storage-driver overlay2 \
+                --exec-root /run/ci-browser-engine --pidfile /run/ci-browser.pid \
+                --containerd-namespace ci-browser --containerd-plugins-namespace ci-browser-plugins \
+                --bridge none --iptables=false --ip6tables=false --ip-masq=false --ip-forward=false \
+                > "$RUNNER_TEMP/browser-daemon.log" 2>&1 &
+              for attempt in {1..100}; do
+                if docker info --format '{{.Driver}} {{.DockerRootDir}}' > "$RUNNER_TEMP/browser-store" 2>/dev/null; then break; fi
+                sleep 0.1
+              done
+              if ! grep -Fxq "overlay2 $data" "$RUNNER_TEMP/browser-store"; then
+                cat "$RUNNER_TEMP/browser-daemon.log" >&2
+                exit 1
+              fi
+              echo "Browser image store: $(findmnt -n -o FSTYPE --target "$data"); ready in $(( $(date +%s%3N) - start )) ms"
+              jq -r .nginx <<< "$IMAGE_PROFILE" | base64 --decode > "$RUNNER_TEMP/browser-registry.conf"
+              nginx -p "$RUNNER_TEMP/" -c "$RUNNER_TEMP/browser-registry.conf" -e stderr
+              set -o pipefail
+              docker pull --platform linux/amd64 "$PLAYWRIGHT_IMAGE" 2>&1 |
+                while IFS= read -r line; do printf '%s %s\n' "$EPOCHREALTIME" "$line"; done
+              pulled=$(date +%s%3N)
+              echo "Browser image pull: $((pulled - start)) ms"
+              toolchain="$HOME/.local/share/vite-plus"
+              toolcache="$HOME/.cache/vite-plus"
+              mkdir -p "$RUNNER_TEMP/browser-home" "$RUNNER_TEMP/container-tools" "$toolchain" "$toolcache"
+              docker run --detach --pull=never --name ci-browser --ipc=host --network host \
+                --env PLAYWRIGHT_BROWSERS_PATH=/ci-browser-tools \
+                --volume "$RUNNER_TEMP/container-tools:/ci-browser-tools:ro" \
+                --user "$(id -u):$(id -g)" --env HOME --env CI --env SITE_URL \
+                --env PATH="$toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+                --volume "$RUNNER_TEMP/browser-home:$HOME" \
+                --volume "$toolchain:$toolchain" --volume "$toolcache:$toolcache" \
+                --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" --workdir "$GITHUB_WORKSPACE" \
+                "$PLAYWRIGHT_IMAGE" sleep infinity
+              echo "Browser container start: $(( $(date +%s%3N) - pulled )) ms"
+            )
+            status=$?
+            echo "$status" > "$RUNNER_TEMP/browser-start-status"
+          ) </dev/null > "$RUNNER_TEMP/browser-start.log" 2>&1 &
+      - name: Start preparing locked browser tools
+        env:
+          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
+          PW_INTEGRITY: ${{ needs.scope.outputs.playwright-integrity }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: ${{ contains(matrix.target, 'webkit') && '1' || '0' }}
+          TARGET: ${{ matrix.target }}
+          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
+        run: |
+          mkfifo "$RUNNER_TEMP/browser-tools-status"
+          (
+            set +e
+            (
+              set -eo pipefail
+              start=$(date +%s%3N)
+              cli=$(mktemp -d)
+              curl --fail --silent --show-error --location --output "$cli/core.tgz" \
+                "https://registry.npmjs.org/playwright-core/-/playwright-core-$PW_VERSION.tgz"
+              digest=$(openssl dgst -sha512 -binary "$cli/core.tgz" | openssl base64 -A)
+              if [[ "sha512-$digest" != "$PW_INTEGRITY" ]]; then
+                echo "Playwright CLI integrity check failed" >&2
+                exit 1
+              fi
+              tar -xzf "$cli/core.tgz" -C "$cli"
+              engines=("$TOOL")
+              if [[ ",$TARGET," == *,webkit,* ]]; then engines=(webkit "$TOOL"); fi
+              node "$cli/package/cli.js" install --only-shell --no-progress "${engines[@]}"
+              echo "Browser tools started: $start ms; elapsed: $(( $(date +%s%3N) - start )) ms"
+            )
+            echo "$?" > "$RUNNER_TEMP/browser-tools-status"
+          ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           filter: blob:none
+      - name: Start preparing the host Chromium font
+        if: ${{ !contains(matrix.target, 'webkit') }}
+        run: |
+          mkfifo "$RUNNER_TEMP/chromium-font-status"
+          (
+            set +e
+            bash scripts/ci-install-chromium-font.sh
+            echo "$?" > "$RUNNER_TEMP/chromium-font-status"
+          ) </dev/null > "$RUNNER_TEMP/chromium-font.log" 2>&1 &
       - uses: ./.github/actions/dependencies
         with:
-          environment: *playwright_image
+          environment: ubuntu-24.04
+      - name: Wait for the browser tools
+        run: |
+          read -r status < "$RUNNER_TEMP/browser-tools-status"
+          cat "$RUNNER_TEMP/browser-tools.log"
+          exit "$status"
+      - name: Wait for the browser container
+        if: contains(matrix.target, 'webkit')
+        run: |
+          read -r status < "$RUNNER_TEMP/browser-start-status"
+          cat "$RUNNER_TEMP/browser-start.log"
+          if [ "$status" != 0 ]; then exit "$status"; fi
       - id: browsers
         name: Verify preinstalled browser versions
+        if: contains(matrix.target, 'webkit')
         run: |
-          node --input-type=module <<'NODE'
+          docker exec ci-browser sh -ec 'test "$(fc-match -f "%{file}" "WenQuanYi Zen Hei")" = /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
+          docker exec -i ci-browser vp exec node --input-type=module - '${{ matrix.target }}' <<'NODE'
           import { createRequire } from 'node:module';
-          import { accessSync, constants } from 'node:fs';
           const require = createRequire(import.meta.url);
           const webRequire = createRequire(require.resolve('@e2e-dev/web'));
           const { version } = webRequire('playwright-core/package.json');
           if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
           const { chromium, webkit } = webRequire('playwright-core');
-          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
+          const webkitBrowser = await webkit.launch();
+          await webkitBrowser.close();
+          if (process.argv[2] !== 'webkit') {
+            const browser = await chromium.launch();
+            await browser.close();
+          }
           NODE
-      - if: matrix.variant == 'default'
-        run: vp run build
-      - run: vp run test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}
+      - name: Prepare pinned Chromium on the host
+        if: ${{ !contains(matrix.target, 'webkit') }}
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
+        run: |
+          echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          read -r status < "$RUNNER_TEMP/chromium-font-status"
+          cat "$RUNNER_TEMP/chromium-font.log"
+          if [[ "$status" != 0 ]]; then exit "$status"; fi
+          node --input-type=module <<'NODE'
+          import { createRequire } from 'node:module';
+          const require = createRequire(import.meta.url);
+          const web = createRequire(require.resolve('@e2e-dev/web'));
+          const start = performance.now();
+          const browser = await web('playwright-core').chromium.launch();
+          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
+          await browser.close();
+          NODE
+      - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - name: Run browser shard
+        env:
+          VARIANT: ${{ matrix.variant }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          runner=()
+          if [[ ",$TARGET," == *,webkit,* ]]; then runner=(docker exec ci-browser); fi
+          if [[ "$VARIANT" == default ]]; then "${runner[@]}" vp run build; fi
+          bash scripts/ci-budget.sh 60000 "${runner[@]}" vp run --no-cache test:e2e --variant "$VARIANT" --target "$TARGET"
       - name: Preserve diagnostic reports
         if: ${{ always() }}
         continue-on-error: true
@@ -205,6 +377,8 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
+      - if: ${{ !cancelled() }}
+        uses: ./.github/actions/check-setup-budget
 
   verify:
     if: always()

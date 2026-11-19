@@ -48,7 +48,10 @@ test('documentation verification keeps the formatting job and skips full-only ch
 
 test('merge groups select full verification without consulting the PR selector', () => {
   const scopeJob = workflow.split('\n  scope:\n')[1].split('\n  format:\n')[0];
-  const select = scopeJob.split('- id: select\n        run: |\n')[1].trimEnd();
+  const select = scopeJob
+    .split('- id: select\n        run: |\n')[1]
+    .split('\n      - ')[0]
+    .trimEnd();
   const directory = mkdtempSync(join(tmpdir(), 'ci-scope-'));
   const output = join(directory, 'output');
   try {
@@ -73,11 +76,13 @@ test.each(['failure', 'cancelled', 'skipped', null])(
   },
 );
 
-test('merge groups run the unit and timezone suites without the Vite+ task cache', () => {
+test('both unit suites run without the Vite+ task cache under their execution budget', () => {
   const unitJob = workflow.split('\n  unit:\n')[1].split('\n  build:\n')[0];
-  const queueCacheFlag = "${{ github.event_name == 'merge_group' && '--no-cache' || '' }}";
-  expect(unitJob).toContain(`- run: vp run ${queueCacheFlag} test:unit\n`);
-  expect(unitJob).toContain(`- run: vp run ${queueCacheFlag} test:unit:tz\n`);
+  expect(unitJob).toContain('run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit\n');
+  expect(unitJob).toContain(
+    "if: ${{ !cancelled() && steps.unit_tests.outcome != 'skipped' }}\n" +
+      '        run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit:tz\n',
+  );
 });
 
 test('unknown scope cannot satisfy the gate', () => expect(verify('')).toBe(1));
@@ -111,4 +116,18 @@ test('a cold installation must succeed before saving the exact dependency tree',
   expect(action).toContain('path: node_modules');
   expect(action).not.toMatch(/continue-on-error|restore-keys/);
   expect(action.indexOf('vp install')).toBeLessThan(action.indexOf('uses: actions/cache/save'));
+});
+
+test('each verification worker enforces the environment budget after preparing its dependencies', () => {
+  for (const name of ['format', ...fullOnly]) {
+    const job = workflow.split(`\n  ${name}:\n`)[1].split(/\n  \w+:\n/)[0];
+    const setupFinish = job.indexOf('SETUP_FINISHED=');
+    const budgetCheck = job.indexOf('uses: ./.github/actions/check-setup-budget');
+    expect(job).toContain('uses: ./.github/actions/dependencies');
+    expect(setupFinish).toBeGreaterThan(job.indexOf('uses: ./.github/actions/dependencies'));
+    expect(budgetCheck).toBeGreaterThan(setupFinish);
+    const budgetStep = job.split(/\n      - /).find((step) => step.includes('check-setup-budget'));
+    expect(budgetStep).toContain('if: ${{ !cancelled() }}');
+    expect(budgetStep).not.toContain('continue-on-error');
+  }
 });
