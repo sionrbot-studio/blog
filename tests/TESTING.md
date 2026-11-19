@@ -92,6 +92,25 @@ use the lower-level `createFixture` from
 `tests/support/build-fixture.ts` to work in an isolated temporary copy. Always
 await `fixture.dispose()` in `finally` or `afterAll`, including failed tests.
 
+### Shared workers and cleanup
+
+Vitest reuses workers within each project and shuffles file and test order.
+Replay a reported seed with `vp test --project unit --sequence.seed=<seed>`
+or use `--project build` for a build failure.
+
+- Keep imported modules read-only. Use a fresh factory instance for mutable
+  state, and build an isolated fixture for any filesystem or app configuration changes.
+- Use `vi.stubEnv`, `vi.stubGlobal` and `vi.spyOn` for process-wide changes.
+  The shared setup restores stubs, spies, mock state, real timers, the working
+  directory, environment variables and global bindings after each file.
+  Restore state in `afterEach` if it can affect another test in the same file.
+- Dispose of fixtures, timers, listeners and child processes in `finally`,
+  `afterEach` or `afterAll`, including after failed assertions. Await asynchronous
+  cleanup before the file finishes.
+- Use project aliases for stable virtual-module substitutes. Scope other
+  module mocks to a single test and undo them before another file can import
+  the module. Avoid clearing the worker's entire module cache.
+
 For a focused run:
 
 ```sh

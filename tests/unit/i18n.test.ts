@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import en from '../../src/i18n/en';
 import { dictionaries, formatMessage, useT } from '../../src/i18n/t';
 import {
@@ -12,11 +12,6 @@ import {
 } from '../../src/i18n/locales';
 import config from '../../x18n.config';
 
-// Astro's virtual helper is exercised against the real config by build artifact tests.
-vi.mock('astro:i18n', () => ({
-  getRelativeLocaleUrl: (locale: string, path: string) =>
-    `/${locale === 'zh-Hans' ? 'zh/' : ''}${path}`,
-}));
 import { canonicalPath, localizedHref } from '../../src/i18n/links';
 
 const placeholders = (text: string) =>
