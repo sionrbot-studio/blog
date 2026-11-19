@@ -227,14 +227,13 @@ in these artifacts or CI, rather than adding execution history to these guides.
 
 ## CI and coverage boundaries
 
-[CI](../.github/workflows/ci.yml) runs one `verify` job on pull requests and manual
-dispatch. It executes static checks, i18n, unit/timezone tests, a root-hosted
-baseline build, build tests and internal links in order. Four explicit browser
-steps run `default`, `i18n`, `configured-forms` and `rendering`, each on
-`desktop,narrow,webkit`; a fifth runs `production-path` on desktop. Required
-steps use command exit codes; an ordinary failure stops later verification.
-The root build stays in the job's workspace and fixture suites build their own
-isolated output. Diagnostics uploads preserve reports without changing test results.
+[CI](../.github/workflows/ci.yml) checks documentation formatting on documentation-only
+PRs. Full verification runs formatting, lint, types, unit/timezone tests, builds,
+link checks, build contract shards and browser variants in parallel. Manual runs and merge groups targeting `main`
+use the full suite. Queue candidates always execute unit and timezone tests uncached. Each shard builds the root baseline it consumes. The default
+browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
+retain their target sets. The required `verify` job checks every dependency's
+conclusion against the selected scope.
 
 The [release workflow](../.github/workflows/release.yml) repeats core validation
 at the fixed merged version SHA before building and checking both production

@@ -19,23 +19,17 @@ env:
   SITE_URL: https://sionrbot.github.io
 
 jobs:
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    # Keep aligned with @e2e-dev/web's playwright-core dependency.
-    container:
-      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
-      options: --ipc=host
+  scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    outputs:
+      scope: ${{ steps.select.outputs.scope }}
     steps:
-      - id: checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 2
-      - uses: ./.github/actions/dependencies
-        with:
-          environment: *playwright_image
-      - id: scope
-        name: Select verification scope
+          fetch-depth: 0
+          filter: blob:none
+      - id: select
         run: |
           if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
             echo 'scope=full' >> "$GITHUB_OUTPUT"
@@ -43,43 +37,147 @@ jobs:
           else
             node scripts/ci-scope.ts
           fi
-      - id: vp_task_cache
-        name: Restore vp task cache
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+
+  format:
+    needs: scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          path: node_modules/.vite/task-cache
-          key: ci-vp-task-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: ci-vp-task-v1-${{ runner.os }}-${{ runner.arch }}-
-      - name: Check documentation formatting
-        if: ${{ steps.scope.outputs.scope == 'docs' }}
-        run: vp fmt --check
-      - name: Check Astro types and templates
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run check
-      - name: Check formatting, lint and TypeScript
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp check
-      - name: Check Astro template lint rules
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run lint:astro
-      - name: Check translations
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run i18n:check
-      - name: Test logic and tools
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit
-      - name: Test date contracts across timezones
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit:tz
-      - name: Save vp task cache
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/dependencies
         with:
-          path: node_modules/.vite/task-cache
-          key: ${{ steps.vp_task_cache.outputs.cache-primary-key }}
+          environment: ubuntu-24.04
+      - run: vp fmt --check
+
+  lint:
+    needs: scope
+    if: needs.scope.outputs.scope != 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
+      - run: vp run astro sync
+      - run: vp run lint
+
+  types:
+    needs: scope
+    if: needs.scope.outputs.scope != 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
+      - run: vp run check
+      - run: vp check
+
+  unit:
+    needs: scope
+    if: needs.scope.outputs.scope != 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
+      - run: vp run i18n:check
+      - run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit
+      - run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit:tz
+
+  build:
+    needs: scope
+    if: needs.scope.outputs.scope != 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
+      - run: vp run build
+      - name: Verify internal links
+        run: vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
+
+  contracts:
+    needs: scope
+    if: needs.scope.outputs.scope != 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
+      - run: vp run build
+      - run: vp run test:build --shard=${{ matrix.shard }}/2
+      - name: Preserve diagnostic reports
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ github.job }}-${{ strategy.job-index }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tests/test-results/build/
+            .e2e/runs/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  browser:
+    needs: scope
+    if: needs.scope.outputs.scope != 'docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    container:
+      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: default, target: desktop }
+          - { variant: default, target: narrow }
+          - { variant: default, target: webkit }
+          - { variant: i18n, target: 'desktop,narrow,webkit' }
+          - { variant: configured-forms, target: 'desktop,narrow,webkit' }
+          - { variant: rendering, target: 'desktop,narrow,webkit' }
+          - { variant: production-path, target: desktop }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/dependencies
+        with:
+          environment: *playwright_image
       - id: browsers
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
         name: Verify preinstalled browser versions
         run: |
           node --input-type=module <<'NODE'
@@ -92,40 +190,43 @@ jobs:
           const { chromium, webkit } = webRequire('playwright-core');
           for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
           NODE
-      - id: baseline_build
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        name: Build root-path test site
+      - if: matrix.variant == 'default'
         run: vp run build
-      - id: build_tests
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        name: Verify built contracts and internal links
-        run: |
-          vp run test:build
-          vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
-      - id: default_browser
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run test:e2e --variant default --target desktop,narrow,webkit
-      - id: i18n_browser
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run test:e2e --variant i18n --target desktop,narrow,webkit
-      - id: forms_browser
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run test:e2e --variant configured-forms --target desktop,narrow,webkit
-      - id: rendering_browser
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run test:e2e --variant rendering --target desktop,narrow,webkit
-      - id: production_path_browser
-        if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run test:e2e --variant production-path --target desktop
+      - run: vp run test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}
       - name: Preserve diagnostic reports
-        if: ${{ always() && steps.scope.outputs.scope != 'docs' }}
+        if: ${{ always() }}
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: verify-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ github.job }}-${{ strategy.job-index }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             tests/test-results/build/
             .e2e/runs/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
+
+  verify:
+    if: always()
+    needs: [scope, format, lint, types, unit, build, contracts, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require every selected job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'NODE'
+          const jobs = JSON.parse(process.env.NEEDS);
+          const scope = jobs.scope.outputs.scope;
+          if (!['docs', 'full'].includes(scope)) process.exit(1);
+          if (process.env.GITHUB_EVENT_NAME === 'merge_group' && scope !== 'full') {
+            throw new Error('Merge groups require full verification');
+          }
+          for (const name of ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {
+            const job = jobs[name];
+            if (!job) throw new Error('Missing required job: ' + name);
+            const expected = scope === 'docs' && !['scope', 'format'].includes(name) ? 'skipped' : 'success';
+            if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
+          }
+          NODE

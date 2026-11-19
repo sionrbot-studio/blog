@@ -1,69 +1,105 @@
-import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from 'vite-plus/test';
 
 const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-const steps = workflow
-  .split(/^      - /m)
-  .slice(1)
-  .map((body) => ({
-    body,
-    condition: body.match(/^        if: \$\{\{ (.*) \}\}$/m)?.[1],
-  }));
+const gate = workflow.split('\n  verify:\n')[1];
+const script = gate.split("<<'NODE'\n")[1].split('\n          NODE')[0];
+const names = ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser'];
+const fullOnly = names.filter((name) => !['scope', 'format'].includes(name));
 
-function execute(scope: string | undefined, failCommand?: string) {
-  let failed = false;
-  const commands: string[] = [];
-  for (const step of steps) {
-    const condition = step.condition ?? 'true';
-    const enabled =
-      (!failed || condition.includes('always()')) &&
-      runInNewContext(condition, {
-        steps: { scope: { outputs: { scope } } },
-        always: () => true,
-      });
-    if (!enabled) continue;
-    const command = step.body.match(/^        run: (.+)$/m)?.[1];
-    if (!command) continue;
-    commands.push(command);
-    if (command === failCommand) failed = true;
-  }
-  return { commands, failed };
+function verify(
+  scope: string,
+  overrides: Record<string, string | null> = {},
+  event = 'pull_request',
+) {
+  const jobs = Object.fromEntries(
+    names
+      .filter((name) => overrides[name] !== null)
+      .map((name) => [
+        name,
+        {
+          outputs: name === 'scope' ? { scope } : {},
+          result:
+            overrides[name] ??
+            (scope === 'docs' && fullOnly.includes(name) ? 'skipped' : 'success'),
+        },
+      ]),
+  );
+  return spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    env: { GITHUB_EVENT_NAME: event, NEEDS: JSON.stringify(jobs) },
+  }).status;
 }
 
-test('documentation verification runs formatting and omits production checks', () => {
-  const { commands } = execute('docs');
-  expect(workflow).toContain('uses: ./.github/actions/dependencies');
-  expect(commands).toContain('vp fmt --check');
-  expect(commands).not.toContain('vp run check');
-  expect(commands).not.toContain('vp run build');
-  expect(commands.some((command) => command.includes('test:'))).toBe(false);
+test.each(['docs', 'full'])('%s requires all selected jobs and successful formatting', (scope) => {
+  expect(verify(scope)).toBe(0);
+  expect(verify(scope, { format: 'failure' })).toBe(1);
+  expect(verify(scope, { scope: 'cancelled' })).toBe(1);
 });
 
-test.each(['full', undefined, 'unexpected'])('scope %s retains full verification', (scope) => {
-  const { commands } = execute(scope);
-  expect(commands).toContain('vp run check');
-  expect(commands).toContain('vp check');
-  expect(commands).toContain('vp run build');
-  expect(commands).toContain('vp run test:e2e --variant production-path --target desktop');
-  expect(commands).not.toContain('vp fmt --check');
+test('documentation verification keeps the formatting job and skips full-only checks', () => {
+  const formatJob = workflow.split('\n  format:\n')[1].split('\n  lint:\n')[0];
+  expect(formatJob).toContain('run: vp fmt --check');
+  expect(formatJob).not.toMatch(/^    if:/m);
+  expect(verify('docs', { unit: 'success' })).toBe(1);
 });
 
-test.each([
-  ['docs', 'vp fmt --check'],
-  ['full', 'vp run check'],
-])('a failed %s check cannot be converted to a successful job', (scope, command) => {
-  const result = execute(scope, command);
-  expect(result.failed).toBe(true);
-  expect(result.commands.at(-1)).toBe(command);
+test('merge groups select full verification without consulting the PR selector', () => {
+  const scopeJob = workflow.split('\n  scope:\n')[1].split('\n  format:\n')[0];
+  const select = scopeJob.split('- id: select\n        run: |\n')[1].trimEnd();
+  const directory = mkdtempSync(join(tmpdir(), 'ci-scope-'));
+  const output = join(directory, 'output');
+  try {
+    const result = spawnSync('sh', ['-eu', '-c', select], {
+      cwd: directory,
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_EVENT_NAME: 'merge_group', GITHUB_OUTPUT: output },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(output, 'utf8')).toBe('scope=full\n');
+  } finally {
+    rmSync(directory, { recursive: true });
+  }
+  expect(verify('full', {}, 'merge_group')).toBe(0);
+  expect(verify('docs', {}, 'merge_group')).toBe(1);
 });
 
-test('required job remains unconditional and checkout includes merge parents', () => {
+test.each(['failure', 'cancelled', 'skipped', null])(
+  'full merge-group verification rejects browser result %s',
+  (result) => {
+    expect(verify('full', { browser: result }, 'merge_group')).toBe(1);
+  },
+);
+
+test('merge groups run the unit and timezone suites without the Vite+ task cache', () => {
+  const unitJob = workflow.split('\n  unit:\n')[1].split('\n  build:\n')[0];
+  const queueCacheFlag = "${{ github.event_name == 'merge_group' && '--no-cache' || '' }}";
+  expect(unitJob).toContain(`- run: vp run ${queueCacheFlag} test:unit\n`);
+  expect(unitJob).toContain(`- run: vp run ${queueCacheFlag} test:unit:tz\n`);
+});
+
+test('unknown scope cannot satisfy the gate', () => expect(verify('')).toBe(1));
+
+test('all worker jobs feed the unconditional required gate', () => {
+  const declarations = [...workflow.split('\njobs:\n')[1].matchAll(/^  (\w+):$/gm)].map(
+    (match) => match[1],
+  );
+  const dependencies = gate.match(/^    needs: \[(.+)\]$/m)![1].split(', ');
+  expect(dependencies.sort()).toEqual([...names].sort());
+  expect(declarations.sort()).toEqual([...names, 'verify'].sort());
+  expect(gate).toContain('if: always()');
   expect(workflow).not.toMatch(/^\s+paths(?:-ignore)?:/m);
+  expect(workflow).toContain('  merge_group:\n    types: [checks_requested]\n    branches: [main]');
   expect(workflow).toContain('  pull_request:');
   expect(workflow).toContain('  workflow_dispatch:');
-  expect(workflow.split('    steps:')[0]).not.toMatch(/^    if:/m);
-  expect(workflow).toContain('fetch-depth: 2');
+  expect(workflow).toContain('fetch-depth: 0');
+  expect(workflow).toContain('filter: blob:none');
+  for (const name of fullOnly)
+    expect(workflow.split('\n  ' + name + ':\n')[1].split('    steps:')[0]).toContain(
+      "if: needs.scope.outputs.scope != 'docs'",
+    );
 });
 
 test('a cold installation must succeed before saving the exact dependency tree', () => {
