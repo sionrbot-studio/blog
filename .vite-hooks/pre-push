@@ -1,0 +1,2 @@
+#!/bin/sh
+exec vp exec node scripts/pre-push.ts "$1"
