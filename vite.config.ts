@@ -1,11 +1,14 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
+// Allow Vite+'s tsrs-lint to load the .astro mapper registered in tsconfig.json.
+process.env.TSRS_LINT_RUN_EXTERNAL_CODE = '1';
+
 // ESLint also checks .astro files with the Astro parser and client-side processor.
 export default defineConfig({
   run: {
     tasks: {
-      check: 'astro check',
+      check: 'astro sync && tsc --noEmit --runExternalCode',
       'lint:astro': 'eslint "**/*.astro"',
       'test:unit': 'vp test --project unit',
       'test:unit:tz': 'node tests/support/run-date-timezones.ts',
