@@ -16,8 +16,9 @@ export default {
             app: {
               url: url.href,
               command: {
-                executable: 'pnpm',
+                executable: 'vp',
                 args: ['run', 'dev', '--host', url.hostname, '--port', '{port}'],
+                inheritEnv: ['SITE_URL'],
                 ...(url.port === '0' ? {} : { reuseExisting: true }),
                 log: '.e2e/logs/dev.log',
               },

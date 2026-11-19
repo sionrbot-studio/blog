@@ -33,7 +33,7 @@ Routine updates primarily maintain dependencies declared in `package.json`.
 Updating a parent package can also change transitive dependencies in
 `pnpm-lock.yaml`, but does not refresh the entire dependency tree. Keep this
 policy: do not add separate routine updates for every transitive package.
-`pnpm install --frozen-lockfile` installs the recorded dependency graph; it does
+`vp install --frozen-lockfile` installs the recorded dependency graph; it does
 not select newer releases.
 
 Security updates also cover vulnerable transitive dependencies recorded in the
@@ -75,7 +75,7 @@ For each affected edge, use the following maintenance procedure in the dependenc
 update PR:
 
 1. Inspect the new parent's declared minimatch range and the resolved dependency
-   graph (`pnpm why minimatch`). Check the current advisory and any newer relevant
+   graph (`vp why minimatch`). Check the current advisory and any newer relevant
    advisories; do not infer safety from a parent-package version bump alone.
 2. Try removing the corresponding override and regenerate the lockfile with the
    pinned pnpm version. Remove the rule permanently only if the parent accepts a
@@ -101,9 +101,9 @@ update PR:
    the advisory comment while related overrides remain, and update this section
    to reflect the remaining rules.
 
-Validate a frozen-lockfile installation, run `pnpm run test:unit`, and run all
+Validate a frozen-lockfile installation, run `vp run test:unit`, and run all
 project checks listed below. Review the lockfile for other vulnerable minimatch
-copies and run `pnpm audit`; the four consumer tests alone do not cover every
+copies and run `vp pm audit`; the four consumer tests alone do not cover every
 possible dependency path. Require `verify` and `title` at the latest PR head before merging.
 After merging a security repair, verify that the relevant Dependabot alert is
 fixed rather than dismissed; automatic alert closure is not a substitute for
@@ -128,20 +128,23 @@ Review bot PRs with the same `verify` and `title` requirements as other changes.
   container version, digest, and explicit version assertion in
   `.github/workflows/ci.yml` and `.github/workflows/release.yml` together.
 - Node.js runtime pins, pnpm tool-version pins, copied font files, and CI tools
-  invoked with `pnpm dlx` require separate review. This npm configuration does not
+  invoked with `vp dlx` require separate review. This npm configuration does not
   promise to maintain them. The separate `github-actions` entry maintains action
   references; review workflow changes and pinned SHAs alongside version updates. Keep
   `package.json#devEngines.runtime.version` and `pnpm-workspace.yaml#nodeVersion`
   aligned when updating Node.js.
 
+CI and release jobs that install dependencies use the [Vite+ CI setup action](https://viteplus.dev/guide/ci).
+The action reads the project toolchain pins and caches package-manager data.
+
 Review manifest, workspace, and lockfile changes together. Validate installation
-with `pnpm install --frozen-lockfile`, then run the required project checks:
+with `vp install --frozen-lockfile`, then run the required project checks:
 
 ```sh
-pnpm run check
-pnpm exec vp check
-pnpm run lint
-pnpm run build
+vp run check
+vp check
+vp run lint
+vp run build
 ```
 
 Run the relevant unit, build-output, and browser tests as well; CI runs the full

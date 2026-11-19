@@ -51,7 +51,7 @@ To run the browser tests against the development server and the repository base:
 
 ```sh
 vp run build
-SEARCH_TEST_BASE=/blog pnpm exec e2e run tests/e2e/deterministic/default/search.e2e.ts --target desktop
+SEARCH_TEST_BASE=/blog vp exec e2e run tests/e2e/deterministic/default/search.e2e.ts --target desktop
 ```
 
 The direct E2E command starts the configured development server. To exercise a
@@ -59,7 +59,7 @@ root-hosted production build with the suite's desktop and narrow targets:
 
 ```sh
 SITE_URL=https://fixture.example vp run build
-SITE_URL=https://fixture.example pnpm run test:e2e -- tests/e2e/deterministic/default/search.e2e.ts
+SITE_URL=https://fixture.example vp run test:e2e tests/e2e/deterministic/default/search.e2e.ts
 ```
 
 Keep `SEARCH_TEST_BASE` unset for the root-hosted run. Build again with the normal

@@ -17,11 +17,11 @@ vp install
 vp run check
 vp check
 vp run lint
-pnpm run i18n:check
-pnpm run test:unit
-pnpm run test:unit:tz
+vp run i18n:check
+vp run test:unit
+vp run test:unit:tz
 vp run build
-pnpm run test:build
+vp run test:build
 ```
 
 **事实：**单元测试由 `vp test --project unit` 选择 `tests/unit/**/*.test.ts`，主要检查文章与标签路径、部署子路径、日期和语言逻辑，也包含发布与部署工具的契约测试。日期专用命令分别在 UTC、America/Los_Angeles、Asia/Singapore 子进程运行，检查时区变化下的日期输出。单元层把 `astro:content` 指向会拒绝集合访问的 stub，内容集合必须进入真实构建测试。[测试项目配置](../vite.config.ts)、[文章路径](../tests/unit/posts.test.ts)、[部署子路径](../tests/unit/base-path.test.ts)、[日期](../tests/unit/dates.test.ts)、[时区运行器](../tests/support/run-date-timezones.ts)、[语言逻辑](../tests/unit/i18n.test.ts)、[内容 stub](../tests/support/astro-content.stub.ts)、[发布工具测试](../tests/unit/release.test.ts)
@@ -60,13 +60,13 @@ pnpm run test:build
 **事实：**浏览器基线使用站点根路径，运行前按指南安装浏览器并以相同 SITE_URL 构建。生产子路径由构建测试与隔离的 `production-path` 真实 preview 贯通验证。runner 将构建使用的 `siteUrl` 传给 preview，并记录源码 SHA 与工作区是否有修改。[测试指南](../tests/TESTING.md)、[CI 根路径配置](../.github/workflows/ci.yml)、[子路径断言](../tests/build/base-path.test.ts)
 
 ```sh
-pnpm exec e2e-web install chromium webkit
+vp exec e2e-web install chromium webkit
 SITE_URL=https://sionrbot.github.io vp run build
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --target desktop,narrow,webkit
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --variant rendering --target desktop,narrow,webkit
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --variant configured-forms --target desktop,narrow,webkit
-SITE_URL=https://sionrbot.github.io pnpm run test:e2e -- --variant i18n --target desktop,narrow,webkit
-pnpm run test:e2e -- --variant production-path
+SITE_URL=https://sionrbot.github.io vp run test:e2e --target desktop,narrow,webkit
+SITE_URL=https://sionrbot.github.io vp run test:e2e --variant rendering --target desktop,narrow,webkit
+SITE_URL=https://sionrbot.github.io vp run test:e2e --variant configured-forms --target desktop,narrow,webkit
+SITE_URL=https://sionrbot.github.io vp run test:e2e --variant i18n --target desktop,narrow,webkit
+vp run test:e2e --variant production-path
 env -u SITE_URL vp run build
 ```
 
@@ -78,11 +78,11 @@ env -u SITE_URL vp run build
 
 **事实：**[CI](../.github/workflows/ci.yml) 监听 PR 和手动触发，完整验证路径在单一 `verify` job 内依次安装环境、执行 Astro/Vite+/lint/翻译检查、单元与时区测试、根路径构建、构建测试与内部链接检查，再运行浏览器回归。四套确定性变体分别保留 `desktop,narrow,webkit`，`production-path` 运行 desktop。测试直接依赖命令退出码；普通失败终止后续步骤。根 `dist` 只在当前 job 工作区使用，诊断上传不承担验收。
 
-纯开发文档 PR 在同一 `verify` job 中安装依赖后只运行 `pnpm exec vp fmt --check`，跳过类型、lint、翻译、测试、构建和浏览器步骤。白名单为 `docs/**/*.md` 及根目录的 `README.md`、`AGENTS.md`、`GLOSSARY.md`、`THIRD-PARTY-NOTICES.md`；`src/content/**`、`CHANGELOG.md` 和其他路径均执行完整验证。格式检查覆盖当前工作区，不仅检查变更文件。
+纯开发文档 PR 在同一 `verify` job 中安装依赖后只运行 `vp fmt --check`，跳过类型、lint、翻译、测试、构建和浏览器步骤。白名单为 `docs/**/*.md` 及根目录的 `README.md`、`AGENTS.md`、`GLOSSARY.md`、`THIRD-PARTY-NOTICES.md`；`src/content/**`、`CHANGELOG.md` 和其他路径均执行完整验证。格式检查覆盖当前工作区，不仅检查变更文件。
 
 [分类脚本](../scripts/ci-scope.ts) 使用深度为 2 的检出，核对 PR 事件的 base/head SHA 与当前合并提交的两个父提交，再比较目标分支父提交与合并结果。比较覆盖整个合并结果，禁用重命名检测，确保跨白名单重命名同时检查原路径和新路径。只有非空且全部属于白名单的变更才选择文档分支。手动触发、空差异、提交关系不匹配、历史不足或识别异常均执行完整验证；分类输出无法写入时 job 失败。分类不调用 GitHub API，不增加 token 权限。
 
-workflow 不设置 `paths` / `paths-ignore`，`verify` 始终产生检查结果；步骤失败仍使 job 失败。发布流程始终完整验证。分类边界通过 `pnpm exec vp test --project unit tests/unit/ci-scope.test.ts` 验证。
+workflow 不设置 `paths` / `paths-ignore`，`verify` 始终产生检查结果；步骤失败仍使 job 失败。发布流程始终完整验证。分类边界通过 `vp test --project unit tests/unit/ci-scope.test.ts` 验证。
 
 **事实：**[PR title](../.github/workflows/pr-title.yml) 独立验证 Conventional Commit 标题并响应标题编辑。分支规则应要求 `verify` 与 `title`；远端当前配置需要另行读取，不能从仓库文件推断已启用。[发布设置](releasing.md)
 

@@ -169,7 +169,7 @@ describe('fixed-source release wiring', () => {
   test('builds, verifies and transfers only this run’s Workers v1 output', () => {
     const build = steps.find((step) => step.id === 'workers_build')!.body;
     expect(build).toMatch(
-      /rm -rf \.cloudflare\/output\s+pnpm exec cf build\s+test -d \.cloudflare\/output\/v1\s+pnpm exec cf deploy --prebuilt --dry-run/,
+      /rm -rf \.cloudflare\/output\s+vp exec cf build\s+test -d \.cloudflare\/output\/v1\s+vp exec cf deploy --prebuilt --dry-run/,
     );
     const upload = steps.find((step) => step.id === 'workers_upload')!.body;
     const download = steps.find((step) => step.id === 'workers_download')!.body;
@@ -177,7 +177,7 @@ describe('fixed-source release wiring', () => {
     expect(download).toContain('path: .cloudflare/output/v1/');
     expect(download).toContain('artifact-ids: ${{ needs.prepare.outputs.workers-artifact }}');
     expect(steps.find((step) => step.id === 'workers_deploy')?.body).toContain(
-      'pnpm exec cf deploy --prebuilt',
+      'vp exec cf deploy --prebuilt',
     );
   });
 

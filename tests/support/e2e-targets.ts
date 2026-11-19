@@ -21,7 +21,7 @@ export interface E2EManifest {
 export function e2eConfiguration(): E2EConfig {
   const path = process.env.E2E_RUN_MANIFEST;
   if (!path || !isAbsolute(path)) {
-    throw new Error('Use pnpm run test:e2e (or test:e2e:ai) to prepare E2E_RUN_MANIFEST.');
+    throw new Error('Use vp run test:e2e (or test:e2e:ai) to prepare E2E_RUN_MANIFEST.');
   }
   const manifest = JSON.parse(readFileSync(path, 'utf8')) as E2EManifest;
   const { mode, variant, root, dist, reportDir, testsGlob, port, siteUrl, sourceSha, sourceDirty } =
