@@ -264,5 +264,6 @@ and the inability to focus background controls while the modal is open. Tab may
 move focus to browser chrome; this is permitted by native modal behavior.
 Backdrop scroll containment is progressive enhancement: WebKit does not enforce
 `overscroll-behavior` on its non-scrollable backdrop, even though `CSS.supports`
-accepts the property. The dedicated scroll-containment test therefore skips WebKit;
-search interaction and modal focus checks still run on all browser targets.
+accepts the property. All three browser targets check the backdrop's computed
+style, dismissal, focus restoration and scrolling after dismissal. Chromium
+also checks that the document scroll position stays fixed while the dialog is open.
