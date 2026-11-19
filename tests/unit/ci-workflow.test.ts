@@ -15,7 +15,11 @@ function verify(scope: string, override?: Record<string, string>) {
       {
         outputs: { scope },
         result:
-          override?.[name] ?? (scope === 'docs' && fullOnly.includes(name) ? 'skipped' : 'success'),
+          override?.[name] ??
+          ((scope === 'docs' && fullOnly.includes(name)) ||
+          (scope === 'unit' && ['build', 'contracts', 'browser'].includes(name))
+            ? 'skipped'
+            : 'success'),
       },
     ]),
   );
@@ -24,11 +28,14 @@ function verify(scope: string, override?: Record<string, string>) {
   }).status;
 }
 
-test.each(['docs', 'full'])('%s requires all selected jobs and successful formatting', (scope) => {
-  expect(verify(scope)).toBe(0);
-  expect(verify(scope, { format: 'failure' })).toBe(1);
-  expect(verify(scope, { scope: 'cancelled' })).toBe(1);
-});
+test.each(['docs', 'unit', 'full'])(
+  '%s requires all selected jobs and successful formatting',
+  (scope) => {
+    expect(verify(scope)).toBe(0);
+    expect(verify(scope, { format: 'failure' })).toBe(1);
+    expect(verify(scope, { scope: 'cancelled' })).toBe(1);
+  },
+);
 test.each(['failure', 'skipped', 'cancelled'])('full verification rejects %s', (result) => {
   expect(verify('full', { browser: result })).toBe(1);
 });
