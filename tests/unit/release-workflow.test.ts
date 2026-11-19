@@ -143,6 +143,29 @@ describe('fixed-source release wiring', () => {
     },
   );
 
+  test('mirrors the deployed Pages artifact only after smoke and a fresh release gate', () => {
+    const artifact = 'github-pages-${{ github.run_id }}-${{ github.run_attempt }}';
+    for (const id of ['pages_upload', 'pages_deploy', 'mirror_download']) {
+      expect(steps.find((step) => step.id === id)?.body).toContain(artifact);
+    }
+    expect(execute().attempted).toContain('mirror_verify');
+    for (const prerequisite of [
+      'pages_smoke',
+      'mirror_download',
+      'mirror_stage',
+      'mirror_latest',
+    ]) {
+      const result = execute(prerequisite);
+      expect(result.attempted).not.toContain('mirror_push');
+      expect(result.attempted).not.toContain('mirror_verify');
+    }
+    expect(execute(undefined, true).attempted).not.toContain('mirror_push');
+    expect(execute('mirror_push').attempted).not.toContain('mirror_verify');
+    const failed = execute('mirror_verify');
+    expect(failed.failed).toBe(true);
+    expect(failed.results.workers_smoke.outcome).toBe('success');
+  });
+
   test('superseded candidates skip both deployments', () => {
     const result = execute(undefined, true);
     expect(result.failed).toBe(false);

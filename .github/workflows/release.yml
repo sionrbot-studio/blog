@@ -207,6 +207,8 @@ jobs:
       gate: ${{ steps.pages_latest.outputs.deploy }}
       deploy: ${{ steps.pages_deploy.outcome }}
       smoke: ${{ steps.pages_smoke.outcome }}
+      mirror: ${{ steps.mirror_verify.outcome }}
+      mirror-sha: ${{ steps.mirror_push.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -249,6 +251,49 @@ jobs:
       - id: pages_smoke
         if: ${{ steps.pages_deploy.outcome == 'success' }}
         run: node scripts/smoke-site.ts https://sionrbot.github.io/blog/
+
+      - id: mirror_download
+        if: ${{ steps.pages_smoke.outcome == 'success' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pages-artifact
+      - id: mirror_stage
+        if: ${{ steps.mirror_download.outcome == 'success' }}
+        name: Stage the verified artifact in the personal site's blog directory
+        run: |
+          git clone --single-branch --branch main https://github.com/sionrbot/sionrbot.github.io.git "$RUNNER_TEMP/personal-site"
+          python3 scripts/stage-personal-pages.py "$RUNNER_TEMP/pages-artifact/artifact.tar" "$RUNNER_TEMP/personal-site"
+      - id: mirror_latest
+        if: ${{ steps.mirror_stage.outcome == 'success' }}
+        name: Recheck release eligibility before writing to the personal site
+        run: node scripts/release-fixed.ts latest
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_TAG_SHA: ${{ needs.prepare.outputs.tag-sha }}
+      - id: mirror_push
+        if: ${{ steps.mirror_latest.outputs.deploy == 'true' }}
+        name: Push the verified blog tree to the personal site
+        env:
+          GH_TOKEN: ${{ secrets.PERSONAL_PAGES_TOKEN }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          : "${GH_TOKEN:?Configure PERSONAL_PAGES_TOKEN for the personal site}"
+          cd "$RUNNER_TEMP/personal-site"
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m "Mirror blog at $SOURCE_SHA" -m "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+          fi
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin HEAD:refs/heads/main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: mirror_verify
+        if: ${{ steps.mirror_push.outcome == 'success' }}
+        name: Verify the personal Pages deployment for the target commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.mirror_push.outputs.sha }}
+        run: bash scripts/verify-personal-pages.sh "$TARGET_SHA"
 
   workers:
     needs: prepare
@@ -362,6 +407,7 @@ jobs:
             `- Version PR: ${candidate.pr || 'not applicable / not established'}`,
             `- Run / attempt: ${process.env.GITHUB_RUN_ID} / ${process.env.GITHUB_RUN_ATTEMPT}`,
             `- Preparation: ${jobs.prepare.result}`,
+            `- Personal Pages deployment verification: ${jobs.pages.outputs.mirror || 'not run'} (target commit: ${jobs.pages.outputs['mirror-sha'] || 'none'})`,
             `- Software publication: ${publication}`,
             `- Version PR refresh: ${jobs.refresh.result}`, '',
             '| Target | Job | Eligibility | Deployment | Smoke |',
