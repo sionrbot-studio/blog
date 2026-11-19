@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
-// Astro template rules remain in eslint.config.js; run vp run lint for both linters.
+// ESLint also checks .astro files with the Astro parser and client-side processor.
 export default defineConfig({
   test: {
     projects: [
@@ -56,7 +56,10 @@ export default defineConfig({
     rules: {
       'no-array-constructor': 'error',
       'no-unused-expressions': 'error',
-      'no-unused-vars': 'error',
+      'no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^$', varsIgnorePattern: '^$', reportVarsOnlyUsedAsTypes: true },
+      ],
       'typescript/ban-ts-comment': 'error',
       'typescript/no-duplicate-enum-values': 'error',
       'typescript/no-empty-object-type': 'error',
@@ -99,6 +102,16 @@ export default defineConfig({
           'no-var': 'error',
           'no-with': 'off',
           'prefer-const': 'error',
+          'prefer-rest-params': 'error',
+          'prefer-spread': 'error',
+        },
+      },
+      {
+        files: ['**/*.astro'],
+        rules: {
+          'no-var': 'error',
+          // ESLint's Astro parser sees assignments in template expressions.
+          'prefer-const': 'off',
           'prefer-rest-params': 'error',
           'prefer-spread': 'error',
         },

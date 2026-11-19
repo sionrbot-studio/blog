@@ -30,8 +30,8 @@ catalog in `pnpm-workspace.yaml`. Its lint and format settings live in
 - `vp run check` generates Astro content collection types and runs its template-aware type checker.
   Run it before the Vite+ checks on a fresh checkout.
 - `vp check` checks formatting, lint, and TypeScript through Vite+.
-- `vp run lint` runs Oxlint and the retained ESLint rules, including Astro template checks
-  that Oxlint does not enforce.
+- `vp run lint` runs Oxlint across JavaScript and TypeScript, then runs ESLint on `.astro` files
+  for template rules, scope checks, and fixes that account for writes in template expressions.
 - `vp fmt` formats with Oxfmt, including Astro and Tailwind class sorting.
 - `vp run dev`, `vp run build`, and `vp run preview` invoke the project's Astro scripts.
   The built-in `vp dev`, `vp build`, and `vp preview` commands run plain Vite.

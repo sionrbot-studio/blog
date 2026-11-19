@@ -49,7 +49,7 @@ jobs:
         run: vp check
       - name: Check Astro template lint rules
         if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run lint
+        run: vp run lint:astro
       - name: Check translations
         if: ${{ steps.scope.outputs.scope != 'docs' }}
         run: vp run i18n:check

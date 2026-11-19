@@ -16,7 +16,7 @@ vp run dev      # Astro dev server; default http://localhost:4321
 vp fmt          # format with Oxfmt, including Astro and Tailwind class sorting
 vp run check    # generate Astro types and check types + templates
 vp check        # Vite+ formatting, Oxlint, and TypeScript checks
-vp run lint     # Oxlint + ESLint, including Astro template rules
+vp run lint     # Oxlint for JS/TS; ESLint for Astro templates only
 vp run build    # Astro production build; outputs dist/
 vp run preview  # preview the Astro production build
 ```

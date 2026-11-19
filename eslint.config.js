@@ -1,3 +1,6 @@
+// Oxlint (`vp lint`) covers JavaScript and TypeScript. ESLint remains for
+// `.astro` files only: eslint-plugin-astro needs a custom parser and processor
+// that Oxlint's JS plugin API does not support.
 import tseslint from 'typescript-eslint';
 import astro from 'eslint-plugin-astro';
 
@@ -14,10 +17,8 @@ export default [
   },
   ...tseslint.configs.recommended,
   ...astro.configs.recommended,
-  // Lighthouse CI config is CommonJS by extension, so require() is correct there.
   {
-    files: ['**/*.cjs'],
-    languageOptions: { sourceType: 'commonjs' },
-    rules: { '@typescript-eslint/no-require-imports': 'off' },
+    files: ['**/*.astro'],
+    rules: { 'prefer-const': 'error' },
   },
 ];
