@@ -26,6 +26,8 @@ jobs:
     outputs:
       scope: ${{ steps.select.outputs.scope }}
       browser-image: ${{ steps.images.outputs.profile }}
+      playwright-version: ${{ steps.images.outputs.version }}
+      playwright-integrity: ${{ steps.images.outputs.integrity }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -44,6 +46,13 @@ jobs:
         name: Resolve pinned WebKit shard image
         if: steps.select.outputs.scope != 'docs'
         run: |
+          ruby -ryaml -e '
+            lock = YAML.load_file("pnpm-lock.yaml")
+            web = lock.fetch("importers").fetch(".").fetch("devDependencies").fetch("@e2e-dev/web").fetch("version")
+            version = lock.fetch("snapshots").fetch("@e2e-dev/web@#{web}").fetch("dependencies").fetch("playwright-core")
+            integrity = lock.fetch("packages").fetch("playwright-core@#{version}").fetch("resolution").fetch("integrity")
+            puts "version=#{version}", "integrity=#{integrity}"
+          ' >> "$GITHUB_OUTPUT"
           profile=$(python3 scripts/ci-playwright-images.py)
           echo "profile=$profile" >> "$GITHUB_OUTPUT"
 
@@ -231,6 +240,35 @@ jobs:
             status=$?
             echo "$status" > "$RUNNER_TEMP/browser-start-status"
           ) </dev/null > "$RUNNER_TEMP/browser-start.log" 2>&1 &
+      - name: Start preparing locked browser tools
+        if: contains(matrix.target, 'webkit')
+        env:
+          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
+          PW_INTEGRITY: ${{ needs.scope.outputs.playwright-integrity }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: 1
+          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
+        run: |
+          mkfifo "$RUNNER_TEMP/browser-tools-status"
+          (
+            set +e
+            (
+              set -eo pipefail
+              start=$(date +%s%3N)
+              cli=$(mktemp -d)
+              curl --fail --silent --show-error --location --output "$cli/core.tgz" \
+                "https://registry.npmjs.org/playwright-core/-/playwright-core-$PW_VERSION.tgz"
+              digest=$(openssl dgst -sha512 -binary "$cli/core.tgz" | openssl base64 -A)
+              if [[ "sha512-$digest" != "$PW_INTEGRITY" ]]; then
+                echo "Playwright CLI integrity check failed" >&2
+                exit 1
+              fi
+              tar -xzf "$cli/core.tgz" -C "$cli"
+              node "$cli/package/cli.js" install --only-shell --no-progress webkit "$TOOL"
+              echo "Browser tools started: $start ms; elapsed: $(( $(date +%s%3N) - start )) ms"
+            )
+            echo "$?" > "$RUNNER_TEMP/browser-tools-status"
+          ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -238,14 +276,12 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
-      - name: Prepare browser tools alongside the WebKit image pull
+      - name: Wait for the browser tools
         if: contains(matrix.target, 'webkit')
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
-          # The binaries launch inside the container with its pinned system libraries.
-          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: 1
-          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
-        run: bash scripts/ci-install-playwright-tool.sh webkit "$TOOL"
+        run: |
+          read -r status < "$RUNNER_TEMP/browser-tools-status"
+          cat "$RUNNER_TEMP/browser-tools.log"
+          exit "$status"
       - name: Wait for the browser container
         if: contains(matrix.target, 'webkit')
         run: |

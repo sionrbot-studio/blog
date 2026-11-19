@@ -133,8 +133,9 @@ checksum-pinned WenQuanYi font. Setup includes checking the font and launching C
 Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
 Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
-The container starts as soon as the image pull completes. In parallel, the locked
-CLI installs the pinned Ubuntu WebKit and FFmpeg binaries and, for mixed targets,
+The container starts as soon as the image pull completes. Before checkout, each WebKit shard fetches the CLI identified by the
+candidate lockfile and verifies its SHA-512 digest. In parallel with checkout
+and dependency restore, the CLI installs the pinned Ubuntu WebKit and FFmpeg binaries and, for mixed targets,
 Chromium headless shell. Playwright reads these tools directly from a read-only
 mount in the container. The setup budget includes
 waiting for the pull, starting the container and checking its browsers and font.
