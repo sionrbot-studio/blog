@@ -39,8 +39,9 @@ catalog in `pnpm-workspace.yaml`. Its lint and format settings live in
   The built-in `vp dev`, `vp build`, and `vp preview` commands run plain Vite.
 
 `vp install` registers the Vite+ pre-push hook. From a clean checkout of the commit
-you are pushing, Git checks formatting, lint, and TypeScript for the changed files.
-Astro template changes also run the native TypeScript check. On an existing checkout,
+you are pushing, Git checks formatting and lint for changed files.
+It checks project types with tsrs and native TypeScript so changes to shared
+code are also checked against their consumers. On an existing checkout,
 run `vp hooks enable` to install the dispatcher and `vp hooks status` to verify it.
 
 ## Configure

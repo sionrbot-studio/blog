@@ -21,15 +21,17 @@ function run(...args: string[]) {
 
 const [remote] = process.argv.slice(2);
 const changes = new Set<string>();
+let hasChanges = false;
 for (const update of readFileSync(0, 'utf8').trim().split('\n').filter(Boolean)) {
   const [, oid, target, previous] = update.split(' ');
   if (!target.startsWith('refs/heads/') || isZeroOid(oid)) continue;
 
   const base = isZeroOid(previous) ? baseForNewBranch(remote, oid) : previous;
-  const files = git('diff', '--name-only', '-z', '--diff-filter=ACMRT', base, oid, '--')
+  const changesForRef = git('diff', '--name-status', '-z', '--no-renames', base, oid, '--')
     .split('\0')
     .filter(Boolean);
-  if (files.length === 0) continue;
+  if (changesForRef.length === 0) continue;
+  hasChanges = true;
 
   // Tools read the working tree. Verify it represents the commit that will be pushed.
   const pushedTree = git('rev-parse', `${oid}^{tree}`).trim();
@@ -37,16 +39,23 @@ for (const update of readFileSync(0, 'utf8').trim().split('\n').filter(Boolean))
     console.error(`Pre-push requires a clean checkout of the commit for ${target}.`);
     process.exit(1);
   }
-  for (const file of files) changes.add(`./${file}`);
+  for (let index = 0; index < changesForRef.length; index += 2) {
+    const [status, file] = changesForRef.slice(index, index + 2);
+    if (status !== 'D') changes.add(`./${file}`);
+  }
 }
 
-if (changes.size > 0) {
-  const files = [...changes];
-  const templates = files.filter((file) => file.endsWith('.astro'));
-  run('fmt', '--check', '--no-error-on-unmatched-pattern', '--', ...files);
-  // Native TypeScript covers Astro template diagnostics that tsrs currently omits.
-  if (templates.length > 0) run('run', 'check');
-  else run('run', 'astro', 'sync');
-  run('check', '--no-fmt', '--no-error-on-unmatched-pattern', '--', ...files);
-  if (templates.length > 0) run('exec', 'eslint', '--', ...templates);
+if (hasChanges) {
+  if (changes.size > 0) {
+    const files = [...changes];
+    const templates = files.filter((file) => file.endsWith('.astro'));
+    run('fmt', '--check', '--no-error-on-unmatched-pattern', '--', ...files);
+    run('lint', '--no-error-on-unmatched-pattern', '--', ...files);
+    if (templates.length > 0) run('exec', 'eslint', '--', ...templates);
+  }
+
+  // Changed exports and removed paths can invalidate any of their consumers.
+  // Native TypeScript covers Astro diagnostics tsrs currently omits.
+  run('run', '--no-cache', 'check');
+  run('check', '--no-fmt', '--no-lint');
 }
