@@ -128,7 +128,11 @@ canonical and gives preview the same deployment URL. Rebuild without the overrid
 after root-path browser runs, including failures, before default build tests.
 
 Linux CI uses a digest-pinned Playwright container with browsers and system
-dependencies preinstalled. Keep the image and version checks in
+dependencies preinstalled. Browser shards pull the image while the Ubuntu host
+checks out the candidate and prepares the locked toolchain and dependencies.
+The container mounts the workspace and toolchain, and the setup budget includes
+waiting for the pull, starting the container and verifying its browsers.
+Keep the image and version checks in
 `.github/workflows/ci.yml` and `.github/workflows/release.yml` aligned with `@e2e-dev/web`'s `playwright-core`
 dependency when upgrading it. CI verifies the version and browser executables
 before running tests. Targets are Chromium

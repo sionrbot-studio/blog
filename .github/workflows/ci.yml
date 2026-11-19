@@ -175,9 +175,8 @@ jobs:
     if: needs.scope.outputs.scope != 'docs'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
-    container:
-      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
-      options: --ipc=host
+    env:
+      PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
     strategy:
       fail-fast: false
       matrix:
@@ -190,17 +189,42 @@ jobs:
           - { variant: rendering, target: 'desktop,narrow,webkit' }
           - { variant: production-path, target: desktop }
     steps:
+      - name: Start pulling the pinned browser image
+        run: |
+          mkfifo "$RUNNER_TEMP/browser-pull-status"
+          (
+            start=$(date +%s%3N)
+            status=0
+            docker pull "$PLAYWRIGHT_IMAGE" || status=$?
+            echo "Browser image pull: $(( $(date +%s%3N) - start )) ms"
+            echo "$status" > "$RUNNER_TEMP/browser-pull-status"
+          ) </dev/null > "$RUNNER_TEMP/browser-pull.log" 2>&1 &
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           filter: blob:none
       - uses: ./.github/actions/dependencies
         with:
-          environment: *playwright_image
+          environment: ubuntu-24.04
+      - name: Start the prepared browser container
+        run: |
+          read -r status < "$RUNNER_TEMP/browser-pull-status"
+          cat "$RUNNER_TEMP/browser-pull.log"
+          if [ "$status" != 0 ]; then exit "$status"; fi
+          toolchain="$HOME/.local/share/vite-plus"
+          toolcache="$HOME/.cache/vite-plus"
+          mkdir -p "$RUNNER_TEMP/browser-home" "$toolcache"
+          docker run --detach --pull=never --name ci-browser --ipc=host \
+            --user "$(id -u):$(id -g)" --env HOME --env CI --env SITE_URL \
+            --env PATH="$toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            --volume "$RUNNER_TEMP/browser-home:$HOME" \
+            --volume "$toolchain:$toolchain" --volume "$toolcache:$toolcache" \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" --workdir "$GITHUB_WORKSPACE" \
+            "$PLAYWRIGHT_IMAGE" sleep infinity
       - id: browsers
         name: Verify preinstalled browser versions
         run: |
-          node --input-type=module <<'NODE'
+          docker exec -i ci-browser vp exec node --input-type=module <<'NODE'
           import { createRequire } from 'node:module';
           import { accessSync, constants } from 'node:fs';
           const require = createRequire(import.meta.url);
@@ -212,8 +236,8 @@ jobs:
           NODE
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - if: matrix.variant == 'default'
-        run: vp run build
-      - run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}
+        run: docker exec ci-browser vp run build
+      - run: bash scripts/ci-budget.sh 60000 docker exec ci-browser vp run --no-cache test:e2e --variant ${{ matrix.variant }} --target ${{ matrix.target }}
       - name: Preserve diagnostic reports
         if: ${{ always() }}
         continue-on-error: true
