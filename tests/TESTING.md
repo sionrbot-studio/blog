@@ -101,7 +101,8 @@ or use `--project build` for a build failure.
 - Keep imported modules read-only. Use a fresh factory instance for mutable
   state, and build an isolated fixture for any filesystem or app configuration changes.
 - Use `vi.stubEnv`, `vi.stubGlobal` and `vi.spyOn` for process-wide changes.
-  The shared setup restores stubs, spies, mock state and real timers after each file.
+  The shared setup restores stubs, spies, mock state, real timers, the working
+  directory, environment variables and global bindings after each file.
   Restore state in `afterEach` if it can affect another test in the same file.
 - Dispose of fixtures, timers, listeners and child processes in `finally`,
   `afterEach` or `afterAll`, including after failed assertions. Await asynchronous
