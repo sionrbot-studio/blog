@@ -8,7 +8,9 @@
 
 ## 1. 开发时：先检查源码和快速逻辑
 
-**事实：**项目用 Astro 严格 TypeScript 配置；`vp run check` 执行 `astro check`，`vp check` 负责 Vite+ 检查，`vp run lint` 执行 Oxlint 与 ESLint，ESLint 还加载 Astro 模板规则。Oxfmt 配置包含 Astro 与 Tailwind 类排序。新检出应先生成 Astro 类型，再做其余检查。[tsconfig.json](../tsconfig.json)、[package.json](../package.json)、[vite.config.ts](../vite.config.ts)、[eslint.config.js](../eslint.config.js)、[AGENTS.md](../AGENTS.md)
+**事实。** 项目沿用 Astro 严格 TypeScript 配置。`vp run check` 先用 `astro sync` 生成内容集合类型，再用原生 TypeScript 和 Astro content mapper 对 TypeScript 和 `.astro` 文件做类型检查，包括模板表达式和组件 props。新检出应先运行这条命令，再做其余检查。[tsconfig.json](../tsconfig.json)、[package.json](../package.json)、[vite.config.ts](../vite.config.ts)
+
+**事实。** `vp check` 运行 Vite+ 的格式、lint 和 tsrs 类型检查。`vp run lint` 运行 Oxlint 和面向 `.astro` 文件的 ESLint，后者检查模板规则和变量作用域，并在判断 `prefer-const` 时识别模板表达式中的赋值。Oxfmt 配置包含 Astro 与 Tailwind 类排序。[vite.config.ts](../vite.config.ts)、[eslint.config.js](../eslint.config.js)
 
 **事实：**常规本地验证顺序如下；构建使用 `vp run build`，因为项目规则明确区分 Astro 脚本与 Vite+ 内建命令。完整测试的操作说明见现有测试指南。[AGENTS.md](../AGENTS.md)、[测试指南](../tests/TESTING.md)
 

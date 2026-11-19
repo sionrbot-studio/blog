@@ -14,9 +14,9 @@ This is the first file you should read before editing this theme.
 vp install
 vp run dev      # Astro dev server; default http://localhost:4321
 vp fmt          # format with Oxfmt, including Astro and Tailwind class sorting
-vp run check    # generate Astro types and check types + templates
+vp run check    # run astro sync and check types + templates with native TypeScript
 vp check        # Vite+ formatting, Oxlint, and TypeScript checks
-vp run lint     # Oxlint + ESLint, including Astro template rules
+vp run lint     # Oxlint for JS/TS; ESLint for Astro templates only
 vp run build    # Astro production build; outputs dist/
 vp run preview  # preview the Astro production build
 ```
@@ -105,7 +105,7 @@ Human-readable version: `docs/content.md`.
 - Use the configured x18n MCP tools for interactive work, or `vp exec x18n <command> --json` as the CLI fallback. Finish with `vp run i18n:check` and `vp run test:unit`; the normal project checks still apply.
 
 - Run the dev server in the background: `vp run dev --background`; manage it with `vp run astro dev stop`, `vp run astro dev status`, or `vp run astro dev logs`.
-- Keep TypeScript on the 6.x range declared in `package.json`; validate changes with both Astro and Vite+ checks.
+- Before changing compiler, mapper, or ESLint parser versions, read [docs/dependencies.md](docs/dependencies.md#review-linked-versions).
 - Use the pnpm 11 version pinned in `package.json#packageManager` and `allowBuilds` in `pnpm-workspace.yaml`. Vite+ manages Node.js through `package.json#devEngines.runtime`; keep the workspace `nodeVersion` aligned with that pin. `runtimeOnFail: ignore` and `pmOnFail: ignore` prevent pnpm from duplicating Vite+ environment management.
 
 ## Agent skills

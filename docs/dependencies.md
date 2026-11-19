@@ -122,8 +122,17 @@ Review bot PRs with the same `verify` and `title` requirements as other changes.
 - Keep `vite-plus` and the `vite` alias to `@voidzero-dev/vite-plus-core` aligned
   in `pnpm-workspace.yaml`, including catalogs and overrides. Grouping updates does
   not establish compatibility; use the target Vite+ migrator when necessary.
-- Review TypeScript major updates against Astro Check and typescript-eslint
-  support before changing the project's TypeScript 6 constraint.
+- Keep native TypeScript and `@astrojs/ts-content-mapper` pinned to the versions in
+  `package.json`. For updates, verify that `vp run check` passes on a fresh checkout
+  and reports errors in Astro templates and component props. The native compiler
+  loads the mapper declared in `tsconfig.json` with `--runExternalCode`.
+- The `@typescript/native` alias supplies `tsc`. The `typescript` alias points to
+  `@typescript/typescript6`, which supplies the JavaScript compiler API used by
+  ESLint's typescript-eslint parser and exposes its separate `tsc6` binary.
+  Check the parser's supported TypeScript versions and run `vp run lint` before
+  changing that dependency. Vite+ uses its bundled tsrs and enables the content
+  mapper in `vite.config.ts`. Run `vp lint` and `vp check` when updating Vite+ or
+  the mapper. [typescript-eslint dependency support](https://typescript-eslint.io/users/dependency-versions/#typescript)
 - When `@e2e-dev/web` changes its Playwright dependency, update the matching CI
   container version, digest, and explicit version assertion in
   `.github/workflows/ci.yml` and `.github/workflows/release.yml` together.

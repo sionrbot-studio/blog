@@ -1,8 +1,19 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
-// Astro template rules remain in eslint.config.js; run vp run lint for both linters.
+// Allow Vite+'s tsrs-lint to load the .astro mapper registered in tsconfig.json.
+process.env.TSRS_LINT_RUN_EXTERNAL_CODE = '1';
+
+// ESLint also checks .astro files with the Astro parser and client-side processor.
 export default defineConfig({
+  run: {
+    tasks: {
+      check: 'astro sync && tsc --noEmit --runExternalCode',
+      'lint:astro': 'eslint "**/*.astro"',
+      'test:unit': 'vp test --project unit',
+      'test:unit:tz': 'node tests/support/run-date-timezones.ts',
+    },
+  },
   test: {
     projects: [
       {
@@ -56,7 +67,10 @@ export default defineConfig({
     rules: {
       'no-array-constructor': 'error',
       'no-unused-expressions': 'error',
-      'no-unused-vars': 'error',
+      'no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^$', varsIgnorePattern: '^$', reportVarsOnlyUsedAsTypes: true },
+      ],
       'typescript/ban-ts-comment': 'error',
       'typescript/no-duplicate-enum-values': 'error',
       'typescript/no-empty-object-type': 'error',
@@ -99,6 +113,16 @@ export default defineConfig({
           'no-var': 'error',
           'no-with': 'off',
           'prefer-const': 'error',
+          'prefer-rest-params': 'error',
+          'prefer-spread': 'error',
+        },
+      },
+      {
+        files: ['**/*.astro'],
+        rules: {
+          'no-var': 'error',
+          // ESLint's Astro parser sees assignments in template expressions.
+          'prefer-const': 'off',
           'prefer-rest-params': 'error',
           'prefer-spread': 'error',
         },
