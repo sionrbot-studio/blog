@@ -4,7 +4,9 @@ set -eu
 budget_ms=$1
 shift
 start=$(date +%s%3N)
-"$@"
+status=0
+"$@" || status=$?
 elapsed=$(( $(date +%s%3N) - start ))
 echo "Execution: ${elapsed} ms (budget < ${budget_ms} ms)"
-test "$elapsed" -lt "$budget_ms"
+if [ "$status" -ne 0 ]; then exit "$status"; fi
+test "$elapsed" -ge 0 && test "$elapsed" -lt "$budget_ms"

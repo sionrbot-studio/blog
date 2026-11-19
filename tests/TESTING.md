@@ -127,8 +127,23 @@ preview journey. The runner checks an explicit `SITE_URL` against the existing h
 canonical and gives preview the same deployment URL. Rebuild without the override
 after root-path browser runs, including failures, before default build tests.
 
-Linux CI uses a digest-pinned Playwright container with browsers and system
-dependencies preinstalled. Keep the image and version checks in
+Chromium-only CI shards run directly on the Ubuntu host. Before checkout, the locked Playwright
+CLI starts installing its matching headless shell and FFmpeg. After checkout, it installs and verifies
+the checksum-pinned WenQuanYi font in parallel with dependency restore. The
+runner launches Chromium once its tools, font and dependencies are ready.
+Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
+build-time Playwright CLI archive and the Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
+OCI metadata while the host checks out the candidate and prepares dependencies.
+Each WebKit job applies the layers to a fresh Docker overlay2 store on a 4 GiB
+tmpfs. The pull timer includes starting this job-local daemon and pulling the
+base layer. The container starts as soon as the image pull completes and shares its dedicated
+Linux runner’s network namespace. The preview server listens on loopback. Before checkout, each WebKit shard fetches the CLI identified by the
+candidate lockfile and verifies its SHA-512 digest. In parallel with checkout
+and dependency restore, the CLI installs the pinned Ubuntu WebKit and FFmpeg binaries and, for mixed targets,
+Chromium headless shell. Playwright reads these tools directly from a read-only
+mount in the container. The setup budget includes
+waiting for the pull, starting the container and checking its browsers and font.
+Keep the image and version checks in
 `.github/workflows/ci.yml` and `.github/workflows/release.yml` aligned with `@e2e-dev/web`'s `playwright-core`
 dependency when upgrading it. CI verifies the version and browser executables
 before running tests. Targets are Chromium
@@ -229,11 +244,19 @@ in these artifacts or CI, rather than adding execution history to these guides.
 
 [CI](../.github/workflows/ci.yml) checks documentation formatting on documentation-only
 PRs. Full verification runs formatting, lint, types, unit/timezone tests, builds,
-link checks, build contract shards and browser variants in parallel. Manual runs
-use the full suite. Each shard builds the root baseline it consumes. The default
+link checks, build contract shards and browser variants in parallel. Manual runs and merge groups targeting `main`
+use the full suite. Queue candidates always execute unit and timezone tests uncached. Each shard builds the root baseline it consumes. The default
 browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
 retain their target sets. The required `verify` job checks every dependency's
 conclusion against the selected scope.
+
+Each verification worker must finish environment setup in under 30 seconds, measured
+from the Actions job start through its setup marker. The types worker runs Astro sync and native TypeScript
+under one 5-second budget. After Astro sync, the lint worker runs `vp check`
+and Astro ESLint concurrently under its own 5-second budget. Both must succeed.
+Each timed unit, timezone, build-contract and
+browser shard has a 60-second budget. Commands run to completion; reaching a
+budget or failing a command fails the worker and the required gate.
 
 The [release workflow](../.github/workflows/release.yml) repeats core validation
 at the fixed merged version SHA before building and checking both production
@@ -261,7 +284,7 @@ pixel baselines. Lighthouse covers only the pages in its configuration.
 Search dialog checks cover pointer and keyboard opening, native focus restoration,
 and the inability to focus background controls while the modal is open. Tab may
 move focus to browser chrome; this is permitted by native modal behavior.
-Backdrop scroll containment is progressive enhancement: WebKit does not enforce
-`overscroll-behavior` on its non-scrollable backdrop, even though `CSS.supports`
-accepts the property. The dedicated scroll-containment test therefore skips WebKit;
-search interaction and modal focus checks still run on all browser targets.
+On desktop Chromium, narrow Chromium and WebKit, the backdrop scroll test sends
+wheel input while search is open and after it closes. It checks that the page
+holds its position through dismissal, focus returns to the opener, and the page
+responds to the next wheel input.

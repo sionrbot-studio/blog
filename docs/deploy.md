@@ -28,23 +28,29 @@ Output goes to `dist/`.
 
 ## GitHub Pages
 
-The production URL is https://sionrbot.github.io/blog/.
-For a standard GitHub Pages project site, deploy from the `sionrbot/blog`
-repository: GitHub derives the public path from the repository name. Changing
-`site.url` alone does not rename the repository or change its Pages address.
-`site.url` in `src/config.ts` includes the repository path. Astro derives its
-`site` origin and `base` path from that URL; `SITE_URL` can override both for a
-separate deployment or a root-hosted test build.
+The source repository is `sionrbot-studio/blog`. In that repository's
+**Settings → Pages**, select **GitHub Actions**. Its project site is
+https://sionrbot-studio.github.io/blog/.
 
-In the repository's **Settings → Pages**, select **GitHub Actions** as the build
-source. The [release workflow](../.github/workflows/release.yml) validates the
-candidate's fixed source SHA, builds for the Pages URL, checks its production
-output, and saves it to `release-output/pages` before building Workers.
-After both builds pass and the software baseline is public, the Pages job deploys that
-run's native Pages artifact to the `github-pages` environment and performs GET
-smoke checks. Only this job receives Pages write and OIDC permissions.
+Readers keep using the personal site at https://sionrbot.github.io/blog/.
+The Pages build uses this URL for canonical links, RSS, and the sitemap.
+Astro derives the origin and the `/blog/` base path from `site.url` in
+`src/config.ts`. A separate deployment or local test build can override it with
+`SITE_URL`.
 
-In **Settings → Environments → github-pages → Deployment branches and tags**,
+The [release workflow](../.github/workflows/release.yml) checks the Pages build
+for the fixed source SHA and adds a release marker to the artifact before upload.
+After deployment, the Pages job verifies the marker and runs smoke checks at the
+`page_url` returned by the deployment. Only this job receives Pages write and OIDC
+permissions.
+
+After the source checks pass, the workflow syncs the same artifact to `blog/` in
+`sionrbot/sionrbot.github.io`. Once that commit deploys, it verifies the marker
+on the personal site and compares the public [RSS feed](https://sionrbot.github.io/blog/rss.xml)
+and an [existing article](https://sionrbot.github.io/blog/articles/freedom/) with
+the files in the artifact. See [personal Pages mirror setup](releasing.md#personal-pages-mirror).
+
+In the source repository, under **Settings → Environments → github-pages → Deployment branches and tags**,
 choose **Selected branches and tags** and add these two **Branch** rules:
 
 - `release`
@@ -136,19 +142,19 @@ environment's PATH.
 
 Build command: `./node_modules/.bin/vp run build`. Output directory: `dist`.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sionrbot/blog)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sionrbot-studio/blog)
 
 ### Vercel
 
 Framework preset: Astro. Build command: `./node_modules/.bin/vp run build`. Output directory: `dist`.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/sionrbot/blog)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/sionrbot-studio/blog)
 
 ### Netlify
 
 Build command: `./node_modules/.bin/vp run build`. Publish directory: `dist`.
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/sionrbot/blog)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/sionrbot-studio/blog)
 
 ## CI and deployment verification
 

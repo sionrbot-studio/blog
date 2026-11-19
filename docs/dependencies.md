@@ -134,7 +134,8 @@ Review bot PRs with the same `verify` and `title` requirements as other changes.
   mapper in `vite.config.ts`. Run `vp lint` and `vp check` when updating Vite+ or
   the mapper. [typescript-eslint dependency support](https://typescript-eslint.io/users/dependency-versions/#typescript)
 - When `@e2e-dev/web` changes its Playwright dependency, update the matching CI
-  container version, digest, and explicit version assertion in
+  browser layer pins in `scripts/ci-playwright-images.py`, and the container
+  version, digest, and explicit version assertion in
   `.github/workflows/ci.yml` and `.github/workflows/release.yml` together.
 - Node.js runtime pins, pnpm tool-version pins, copied font files, and CI tools
   invoked with `vp dlx` require separate review. This npm configuration does not

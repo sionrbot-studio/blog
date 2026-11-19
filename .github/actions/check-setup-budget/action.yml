@@ -10,6 +10,7 @@ runs:
       run: |
         node --input-type=module <<'NODE'
         const { GITHUB_API_URL, GITHUB_REPOSITORY, JOB_ID, TOKEN, SETUP_FINISHED } = process.env;
+        if (!SETUP_FINISHED) throw new Error('Environment setup did not complete');
         const response = await fetch(GITHUB_API_URL + '/repos/' + GITHUB_REPOSITORY + '/actions/jobs/' + JOB_ID, {
           headers: { Authorization: 'Bearer ' + TOKEN },
         });
