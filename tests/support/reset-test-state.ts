@@ -17,6 +17,7 @@ afterAll(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 
+  // A test may replace process.env itself as well as change its entries.
   process.env = env;
   for (const key of Object.keys(env)) {
     if (!Object.hasOwn(envValues, key)) delete env[key];
