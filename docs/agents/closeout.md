@@ -22,7 +22,8 @@ local branch are separate conditions.
    merge SHA. For content dispatch, record its full input SHA, execution ref,
    software tag baseline, run ID and attempt; a software Release is not created.
 4. Inspect preparation, software publication when applicable, Pages deployment/smoke,
-   and Workers deployment/smoke separately. Require validation and both builds
+   personal mirror eligibility, push and target-SHA verification, and Workers
+   deployment/smoke separately. Require validation and both builds
    from the deployment's current attempt. Verify the fixed candidate against live
    `release` HEAD. Report superseded candidates as skipped, and report each target
    separately when only one deployed. Back-merge completion does not certify deployment.

@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -27,7 +30,13 @@ jobs:
           fetch-depth: 0
           filter: blob:none
       - id: select
-        run: node scripts/ci-scope.ts
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
+            echo 'scope=full' >> "$GITHUB_OUTPUT"
+            echo 'CI verification scope: full'
+          else
+            node scripts/ci-scope.ts
+          fi
 
   format:
     needs: scope
@@ -89,8 +98,8 @@ jobs:
         with:
           environment: ubuntu-24.04
       - run: vp run i18n:check
-      - run: vp run test:unit
-      - run: vp run test:unit:tz
+      - run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit
+      - run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit:tz
 
   build:
     needs: scope
@@ -147,7 +156,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
       options: --ipc=host
     strategy:
       fail-fast: false
@@ -167,7 +176,7 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/dependencies
         with:
-          environment: playwright-1.65.0-noble
+          environment: *playwright_image
       - id: browsers
         name: Verify preinstalled browser versions
         run: |
@@ -211,7 +220,12 @@ jobs:
           const jobs = JSON.parse(process.env.NEEDS);
           const scope = jobs.scope.outputs.scope;
           if (!['docs', 'full'].includes(scope)) process.exit(1);
-          for (const [name, job] of Object.entries(jobs)) {
+          if (process.env.GITHUB_EVENT_NAME === 'merge_group' && scope !== 'full') {
+            throw new Error('Merge groups require full verification');
+          }
+          for (const name of ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {
+            const job = jobs[name];
+            if (!job) throw new Error('Missing required job: ' + name);
             const expected = scope === 'docs' && !['scope', 'format'].includes(name) ? 'skipped' : 'success';
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }
