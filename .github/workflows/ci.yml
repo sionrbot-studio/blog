@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -35,7 +38,13 @@ jobs:
           run-install: false
       - id: scope
         name: Select verification scope
-        run: node scripts/ci-scope.ts
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
+            echo 'scope=full' >> "$GITHUB_OUTPUT"
+            echo 'CI verification scope: full'
+          else
+            node scripts/ci-scope.ts
+          fi
       - id: dependencies
         run: vp install --frozen-lockfile
       - id: vp_task_cache
@@ -63,10 +72,10 @@ jobs:
         run: vp run i18n:check
       - name: Test logic and tools
         if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run test:unit
+        run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit
       - name: Test date contracts across timezones
         if: ${{ steps.scope.outputs.scope != 'docs' }}
-        run: vp run test:unit:tz
+        run: vp run ${{ github.event_name == 'merge_group' && '--no-cache' || '' }} test:unit:tz
       - name: Save vp task cache
         if: ${{ steps.scope.outputs.scope != 'docs' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
