@@ -212,12 +212,33 @@ jobs:
           PLAYWRIGHT_IMAGE=$(jq -r .image <<< "$IMAGE_PROFILE")
           echo "PLAYWRIGHT_IMAGE=$PLAYWRIGHT_IMAGE" >> "$GITHUB_ENV"
           echo "Compressed image size: $(jq -r .bytes <<< "$IMAGE_PROFILE") bytes"
+          export DOCKER_HOST=unix:///run/ci-browser.sock
+          echo "DOCKER_HOST=$DOCKER_HOST" >> "$GITHUB_ENV"
           mkfifo "$RUNNER_TEMP/browser-start-status"
           (
             start=$(date +%s%3N)
             set +e
             (
               set -e
+              data=/run/ci-browser-data
+              sudo mkdir -p "$data"
+              sudo mount -t tmpfs -o size=4G,mode=0700 tmpfs "$data"
+              echo '{"features":{"containerd-snapshotter":false}}' > "$RUNNER_TEMP/browser-daemon.json"
+              sudo dockerd --config-file "$RUNNER_TEMP/browser-daemon.json" \
+                --host "$DOCKER_HOST" --data-root "$data" --storage-driver overlay2 \
+                --exec-root /run/ci-browser-engine --pidfile /run/ci-browser.pid \
+                --containerd-namespace ci-browser --containerd-plugins-namespace ci-browser-plugins \
+                --bridge none --iptables=false --ip6tables=false --ip-masq=false --ip-forward=false \
+                > "$RUNNER_TEMP/browser-daemon.log" 2>&1 &
+              for attempt in {1..100}; do
+                if docker info --format '{{.Driver}} {{.DockerRootDir}}' > "$RUNNER_TEMP/browser-store" 2>/dev/null; then break; fi
+                sleep 0.1
+              done
+              if ! grep -Fxq "overlay2 $data" "$RUNNER_TEMP/browser-store"; then
+                cat "$RUNNER_TEMP/browser-daemon.log" >&2
+                exit 1
+              fi
+              echo "Browser image store: $(findmnt -n -o FSTYPE --target "$data"); ready in $(( $(date +%s%3N) - start )) ms"
               jq -r .nginx <<< "$IMAGE_PROFILE" | base64 --decode > "$RUNNER_TEMP/browser-registry.conf"
               nginx -p "$RUNNER_TEMP/" -c "$RUNNER_TEMP/browser-registry.conf" -e stderr
               set -o pipefail
