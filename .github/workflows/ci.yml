@@ -298,6 +298,15 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
+      - name: Start preparing the host Chromium font
+        if: ${{ !contains(matrix.target, 'webkit') }}
+        run: |
+          mkfifo "$RUNNER_TEMP/chromium-font-status"
+          (
+            set +e
+            bash scripts/ci-install-chromium-font.sh
+            echo "$?" > "$RUNNER_TEMP/chromium-font-status"
+          ) </dev/null > "$RUNNER_TEMP/chromium-font.log" 2>&1 &
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
@@ -337,7 +346,18 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
         run: |
           echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
-          bash scripts/ci-prepare-chromium.sh
+          read -r status < "$RUNNER_TEMP/chromium-font-status"
+          cat "$RUNNER_TEMP/chromium-font.log"
+          if [[ "$status" != 0 ]]; then exit "$status"; fi
+          node --input-type=module <<'NODE'
+          import { createRequire } from 'node:module';
+          const require = createRequire(import.meta.url);
+          const web = createRequire(require.resolve('@e2e-dev/web'));
+          const start = performance.now();
+          const browser = await web('playwright-core').chromium.launch();
+          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
+          await browser.close();
+          NODE
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Run browser shard
         env:

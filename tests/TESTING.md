@@ -128,8 +128,9 @@ canonical and gives preview the same deployment URL. Rebuild without the overrid
 after root-path browser runs, including failures, before default build tests.
 
 Chromium-only CI shards run directly on the Ubuntu host. Before checkout, the locked Playwright
-CLI starts installing its matching headless shell and FFmpeg. After dependency
-restore, the runner checks the checksum-pinned WenQuanYi font and launches Chromium.
+CLI starts installing its matching headless shell and FFmpeg. After checkout, it installs and verifies
+the checksum-pinned WenQuanYi font in parallel with dependency restore. The
+runner launches Chromium once its tools, font and dependencies are ready.
 Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
 build-time Playwright CLI archive and the Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
