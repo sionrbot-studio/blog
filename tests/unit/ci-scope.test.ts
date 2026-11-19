@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vite-plus/test';
-import { detectCiScope, isDevelopmentDocument } from '../../scripts/ci-scope';
+import {
+  browserMatrix,
+  detectCiScope,
+  isDevelopmentDocument,
+  verifyNarrowScope,
+} from '../../scripts/ci-scope';
 
 const directories: string[] = [];
 afterEach(() => {
@@ -167,7 +172,9 @@ test('CLI emits fallback output and fails if it cannot write the required output
     GITHUB_OUTPUT: output,
   };
   expect(spawnSync(process.execPath, [script], { cwd: repo.cwd, env }).status).toBe(0);
-  expect(readFileSync(output, 'utf8')).toBe('scope=full\n');
+  expect(readFileSync(output, 'utf8')).toBe(
+    `scope=full\nbrowser_matrix=${JSON.stringify(browserMatrix('full'))}\n`,
+  );
   expect(
     spawnSync(process.execPath, [script], {
       cwd: repo.cwd,
@@ -186,4 +193,51 @@ test('unit test changes narrow PR checks, mixed changes keep full coverage', () 
     }).scope(),
   ).toBe('full');
   expect(repository((write) => write('tests/support/helper.ts')).scope()).toBe('full');
+});
+
+test.each([
+  ['tests/build/example.test.ts', 'contracts'],
+  ['tests/build/tooling/example.test.ts', 'contracts'],
+  ['tests/e2e/deterministic/default/example.e2e.ts', 'default'],
+  ['tests/e2e/deterministic/production-path/nested/example.e2e.ts', 'production-path'],
+  ['tests/e2e/deterministic/unknown/example.e2e.ts', 'full'],
+  ['tests/e2e/ai/rendering/example.e2e.ts', 'full'],
+  ['tests/e2e/deterministic/default/helper.ts', 'full'],
+])('%s selects %s', (path, scope) => {
+  expect(repository((write) => write(path)).scope()).toBe(scope);
+});
+
+test('mixed browser variants require full verification', () => {
+  expect(
+    repository((write) => {
+      write('tests/e2e/deterministic/default/example.e2e.ts');
+      write('tests/e2e/deterministic/i18n/example.e2e.ts');
+    }).scope(),
+  ).toBe('full');
+});
+
+test('a falsely selected browser scope fails on a hidden source change', () => {
+  const repo = repository((write) => {
+    write('tests/e2e/deterministic/default/example.e2e.ts');
+    write('src/example.ts');
+  });
+  expect(() => verifyNarrowScope(repo.cwd, 'default')).toThrow(
+    'CI scope default would omit changed files: ["src/example.ts"]',
+  );
+});
+
+test('browser selection retains every configured target in the variant', () => {
+  const full = [
+    { variant: 'default', target: 'desktop' },
+    { variant: 'default', target: 'narrow' },
+    { variant: 'default', target: 'webkit' },
+    { variant: 'i18n', target: 'desktop,narrow,webkit' },
+    { variant: 'configured-forms', target: 'desktop,narrow,webkit' },
+    { variant: 'rendering', target: 'desktop,narrow,webkit' },
+    { variant: 'production-path', target: 'desktop' },
+  ];
+  expect(browserMatrix('full').include).toEqual(full);
+  expect(browserMatrix('default').include).toEqual(full.slice(0, 3));
+  expect(browserMatrix('i18n').include).toEqual(full.slice(3, 4));
+  expect(browserMatrix('contracts').include).toEqual([]);
 });
