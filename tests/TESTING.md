@@ -246,8 +246,15 @@ in these artifacts or CI, rather than adding execution history to these guides.
 
 [CI](../.github/workflows/ci.yml) checks documentation formatting on documentation-only
 PRs. A PR confined to `tests/unit/**/*.test.ts` runs formatting, lint, types,
-translation checks and both complete unit and timezone suites. Before selecting this
-scope, CI compares the merge tree with its base a second time, excluding only those test paths.
+translation checks and both complete unit and timezone suites. A PR confined to
+`tests/build/**/*.test.ts` runs formatting, lint, types and both contract shards.
+Changes confined to `.e2e.ts` files in one known deterministic browser variant
+run formatting, lint, types and every browser target configured for that variant.
+Before selecting a reduced scope, CI independently compares the merge tree with
+its base, excluding only paths allowed by that scope. Mixed, shared and unknown
+changes use the full suite. If the independent comparison finds a path omitted
+by the selector, the scope job names it and fails.
+
 Full verification runs formatting, lint, types, unit/timezone tests, builds,
 link checks, build contract shards and browser variants in parallel. Manual runs and merge groups targeting `main`
 use the full suite. Queue candidates always execute unit and timezone tests uncached. Each shard builds the root baseline it consumes. The default

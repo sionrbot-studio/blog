@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vite-plus/test';
-import { detectCiScope, isDevelopmentDocument } from '../../scripts/ci-scope';
+import {
+  browserMatrix,
+  detectCiScope,
+  isDevelopmentDocument,
+  pathsOutsideScope,
+} from '../../scripts/ci-scope';
 
 const directories: string[] = [];
 afterEach(() => {
@@ -167,7 +172,9 @@ test('CLI emits fallback output and fails if it cannot write the required output
     GITHUB_OUTPUT: output,
   };
   expect(spawnSync(process.execPath, [script], { cwd: repo.cwd, env }).status).toBe(0);
-  expect(readFileSync(output, 'utf8')).toBe('scope=full\n');
+  expect(readFileSync(output, 'utf8')).toBe(
+    `scope=full\nbrowser_matrix=${JSON.stringify(browserMatrix('full'))}\n`,
+  );
   expect(
     spawnSync(process.execPath, [script], {
       cwd: repo.cwd,
@@ -188,6 +195,51 @@ test('unit test changes narrow PR checks, mixed changes keep full coverage', () 
   expect(repository((write) => write('tests/support/helper.ts')).scope()).toBe('full');
 });
 
+test.each([
+  ['tests/build/example.test.ts', 'contracts'],
+  ['tests/build/tooling/example.test.ts', 'contracts'],
+  ['tests/e2e/deterministic/default/example.e2e.ts', 'default'],
+  ['tests/e2e/deterministic/production-path/nested/example.e2e.ts', 'production-path'],
+  ['tests/e2e/deterministic/unknown/example.e2e.ts', 'full'],
+  ['tests/e2e/ai/rendering/example.e2e.ts', 'full'],
+  ['tests/e2e/deterministic/default/helper.ts', 'full'],
+])('%s selects %s', (path, scope) => {
+  expect(repository((write) => write(path)).scope()).toBe(scope);
+});
+
+test('mixed browser variants require full verification', () => {
+  expect(
+    repository((write) => {
+      write('tests/e2e/deterministic/default/example.e2e.ts');
+      write('tests/e2e/deterministic/i18n/example.e2e.ts');
+    }).scope(),
+  ).toBe('full');
+});
+
+test('a falsely selected browser scope fails on a hidden source change', () => {
+  const repo = repository((write) => {
+    write('tests/e2e/deterministic/default/example.e2e.ts');
+    write('src/example.ts');
+  });
+  expect(pathsOutsideScope(repo.cwd, 'default')).toEqual(['src/example.ts']);
+});
+
+test('browser selection retains every configured target in the variant', () => {
+  const full = [
+    { variant: 'default', target: 'desktop' },
+    { variant: 'default', target: 'narrow' },
+    { variant: 'default', target: 'webkit' },
+    { variant: 'i18n', target: 'desktop,narrow,webkit' },
+    { variant: 'configured-forms', target: 'desktop,narrow,webkit' },
+    { variant: 'rendering', target: 'desktop,narrow,webkit' },
+    { variant: 'production-path', target: 'desktop' },
+  ];
+  expect(browserMatrix('full').include).toEqual(full);
+  expect(browserMatrix('default').include).toEqual(full.slice(0, 3));
+  expect(browserMatrix('i18n').include).toEqual(full.slice(3, 4));
+  expect(browserMatrix('contracts').include).toEqual([]);
+});
+
 test('the independent Git tree check catches a source change omitted from the path list', () => {
   const repo = repository((write) => {
     write('tests/unit/example.test.ts');
@@ -200,7 +252,7 @@ test('the independent Git tree check catches a source change omitted from the pa
     join(bin, 'git'),
     `#!/bin/sh
 for arg do
-  if [ "$arg" = --name-only ]; then printf 'tests/unit/example.test.ts\\0'; exit 0; fi
+  if [ "$arg" = diff ]; then printf 'tests/unit/example.test.ts\\0'; exit 0; fi
 done
 exec "$REAL_GIT" "$@"
 `,
@@ -219,6 +271,8 @@ exec "$REAL_GIT" "$@"
       GITHUB_OUTPUT: output,
     },
   });
-  expect(result.status).toBe(0);
-  expect(readFileSync(output, 'utf8')).toBe('scope=full\n');
+  expect(result.status).toBe(1);
+  expect(result.stderr.toString()).toContain(
+    'CI scope unit would omit changed files: ["src/example.ts"]',
+  );
 });

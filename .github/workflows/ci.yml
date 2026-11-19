@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 1
     outputs:
       scope: ${{ steps.select.outputs.scope }}
+      browser_matrix: ${{ steps.select.outputs.browser_matrix }}
       browser-image: ${{ steps.images.outputs.profile }}
       playwright-version: ${{ steps.images.outputs.version }}
       playwright-integrity: ${{ steps.images.outputs.integrity }}
@@ -34,17 +35,11 @@ jobs:
           fetch-depth: 0
           filter: blob:none
       - id: select
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
-            echo 'scope=full' >> "$GITHUB_OUTPUT"
-            echo 'CI verification scope: full'
-          else
-            node scripts/ci-scope.ts
-          fi
+        run: node scripts/ci-scope.ts
 
       - id: images
-        name: Resolve pinned WebKit shard image
-        if: steps.select.outputs.scope == 'full'
+        name: Resolve pinned browser tools and image
+        if: contains(fromJSON('["default","i18n","configured-forms","rendering","production-path","full"]'), steps.select.outputs.scope)
         run: |
           ruby -ryaml -e '
             lock = YAML.load_file("pnpm-lock.yaml")
@@ -118,7 +113,7 @@ jobs:
 
   unit:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: needs.scope.outputs.scope == 'unit' || needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -140,7 +135,7 @@ jobs:
 
   build:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -160,7 +155,7 @@ jobs:
 
   contracts:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
+    if: needs.scope.outputs.scope == 'contracts' || needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     strategy:
@@ -195,22 +190,14 @@ jobs:
 
   browser:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
+    if: contains(fromJSON('["default","i18n","configured-forms","rendering","production-path","full"]'), needs.scope.outputs.scope)
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
       IMAGE_PROFILE: ${{ needs.scope.outputs.browser-image }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { variant: default, target: desktop }
-          - { variant: default, target: narrow }
-          - { variant: default, target: webkit }
-          - { variant: i18n, target: 'desktop,narrow,webkit' }
-          - { variant: configured-forms, target: 'desktop,narrow,webkit' }
-          - { variant: rendering, target: 'desktop,narrow,webkit' }
-          - { variant: production-path, target: desktop }
+      matrix: ${{ fromJSON(needs.scope.outputs.browser_matrix) }}
     steps:
       - name: Pull and start the pinned browser image in the background
         if: contains(matrix.target, 'webkit')
@@ -409,17 +396,39 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           const jobs = JSON.parse(process.env.NEEDS);
-          const scope = jobs.scope.outputs.scope;
-          if (!['docs', 'unit', 'full'].includes(scope)) process.exit(1);
+          const scope = jobs.scope?.outputs?.scope;
+          const browserTargets = {
+            default: ['desktop', 'narrow', 'webkit'],
+            i18n: ['desktop,narrow,webkit'],
+            'configured-forms': ['desktop,narrow,webkit'],
+            rendering: ['desktop,narrow,webkit'],
+            'production-path': ['desktop'],
+          };
+          const browserScope = Object.hasOwn(browserTargets, scope);
+          if (!['docs', 'unit', 'contracts', 'full'].includes(scope) && !browserScope) {
+            throw new Error('Unknown verification scope: ' + scope);
+          }
           if (process.env.GITHUB_EVENT_NAME !== 'pull_request' && scope !== 'full') {
             throw new Error('Only pull requests may use reduced verification');
           }
+          const expectedBrowsers = Object.entries(browserTargets)
+            .filter(([variant]) => scope === 'full' || variant === scope)
+            .flatMap(([variant, targets]) => targets.map(target => ({ variant, target })));
+          const plannedBrowsers = JSON.parse(jobs.scope.outputs.browser_matrix).include;
+          if (!Array.isArray(plannedBrowsers) || plannedBrowsers.length !== expectedBrowsers.length ||
+              !expectedBrowsers.every(({ variant, target }) =>
+                plannedBrowsers.some(row => row.variant === variant && row.target === target))) {
+            throw new Error('Browser matrix does not cover the selected scope: ' + scope);
+          }
+          const selected = ['scope', 'format'];
+          if (scope !== 'docs') selected.push('lint', 'types');
+          if (scope === 'unit') selected.push('unit');
+          if (scope === 'contracts') selected.push('contracts');
+          if (browserScope) selected.push('browser');
           for (const name of ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {
             const job = jobs[name];
             if (!job) throw new Error('Missing required job: ' + name);
-            const omitted = (scope === 'docs' && !['scope', 'format'].includes(name))
-              || (scope === 'unit' && ['build', 'browser', 'contracts'].includes(name));
-            const expected = omitted ? 'skipped' : 'success';
+            const expected = scope === 'full' || selected.includes(name) ? 'success' : 'skipped';
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }
           NODE
