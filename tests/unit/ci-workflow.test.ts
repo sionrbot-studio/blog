@@ -1,78 +1,51 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
 import { expect, test } from 'vite-plus/test';
 
 const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-const steps = workflow
-  .split(/^      - /m)
-  .slice(1)
-  .map((body) => ({
-    body,
-    condition: body.match(/^        if: \$\{\{ (.*) \}\}$/m)?.[1],
-  }));
+const gate = workflow.split('\n  verify:\n')[1];
+const script = gate.split("<<'NODE'\n")[1].split('\n          NODE')[0];
+const names = gate.match(/needs: \[(.+)\]/)![1].split(', ');
+const fullOnly = names.filter((name) => !['scope', 'format'].includes(name));
 
-function execute(scope: string | undefined, failCommand?: string) {
-  let failed = false;
-  const commands: string[] = [];
-  for (const step of steps) {
-    const condition = step.condition ?? 'true';
-    const enabled =
-      (!failed || condition.includes('always()')) &&
-      runInNewContext(condition, {
-        steps: { scope: { outputs: { scope } } },
-        always: () => true,
-      });
-    if (!enabled) continue;
-    const command = step.body.match(/^        run: (.+)$/m)?.[1];
-    if (!command) continue;
-    commands.push(command);
-    if (command === failCommand) failed = true;
-  }
-  return { commands, failed };
+function verify(scope: string, override?: Record<string, string>) {
+  const jobs = Object.fromEntries(
+    names.map((name) => [
+      name,
+      {
+        outputs: { scope },
+        result:
+          override?.[name] ?? (scope === 'docs' && fullOnly.includes(name) ? 'skipped' : 'success'),
+      },
+    ]),
+  );
+  return spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    env: { NEEDS: JSON.stringify(jobs) },
+  }).status;
 }
 
-test('documentation verification runs formatting and omits production checks', () => {
-  const { commands } = execute('docs');
-  expect(workflow).toContain('uses: ./.github/actions/dependencies');
-  expect(commands).toContain('vp fmt --check');
-  expect(commands).not.toContain('vp run check');
-  expect(commands).not.toContain('vp run build');
-  expect(commands.some((command) => command.includes('test:'))).toBe(false);
+test.each(['docs', 'full'])('%s requires all selected jobs and successful formatting', (scope) => {
+  expect(verify(scope)).toBe(0);
+  expect(verify(scope, { format: 'failure' })).toBe(1);
+  expect(verify(scope, { scope: 'cancelled' })).toBe(1);
 });
-
-test.each(['full', undefined, 'unexpected'])('scope %s retains full verification', (scope) => {
-  const { commands } = execute(scope);
-  expect(commands).toContain('vp run check');
-  expect(commands).toContain('vp check');
-  expect(commands).toContain('vp run build');
-  expect(commands).toContain('vp run test:e2e --variant production-path --target desktop');
-  expect(commands).not.toContain('vp fmt --check');
+test.each(['failure', 'skipped', 'cancelled'])('full verification rejects %s', (result) => {
+  expect(verify('full', { browser: result })).toBe(1);
 });
-
-test.each([
-  ['docs', 'vp fmt --check'],
-  ['full', 'vp run check'],
-])('a failed %s check cannot be converted to a successful job', (scope, command) => {
-  const result = execute(scope, command);
-  expect(result.failed).toBe(true);
-  expect(result.commands.at(-1)).toBe(command);
-});
-
-test('required job remains unconditional and checkout includes merge parents', () => {
+test('unknown scope cannot satisfy the gate', () => expect(verify('')).toBe(1));
+test('all worker jobs feed the unconditional required gate', () => {
+  const declarations = [...workflow.split('\njobs:\n')[1].matchAll(/^  (\w+):$/gm)].map(
+    (match) => match[1],
+  );
+  expect(names.sort()).toEqual(declarations.filter((name) => name !== 'verify').sort());
+  expect(gate).toContain('if: always()');
   expect(workflow).not.toMatch(/^\s+paths(?:-ignore)?:/m);
   expect(workflow).toContain('  pull_request:');
   expect(workflow).toContain('  workflow_dispatch:');
-  expect(workflow.split('    steps:')[0]).not.toMatch(/^    if:/m);
-  expect(workflow).toContain('fetch-depth: 2');
-});
-
-test('a cold installation must succeed before saving the exact dependency tree', () => {
-  const action = readFileSync(
-    new URL('../../.github/actions/dependencies/action.yml', import.meta.url),
-    'utf8',
-  );
-  expect(action).toContain('run: vp install --frozen-lockfile');
-  expect(action).toContain('path: node_modules');
-  expect(action).not.toMatch(/continue-on-error|restore-keys/);
-  expect(action.indexOf('vp install')).toBeLessThan(action.indexOf('uses: actions/cache/save'));
+  expect(workflow).toContain('fetch-depth: 0');
+  expect(workflow).toContain('filter: blob:none');
+  for (const name of fullOnly)
+    expect(workflow.split('\n  ' + name + ':\n')[1].split('    steps:')[0]).toContain(
+      "if: needs.scope.outputs.scope != 'docs'",
+    );
 });
