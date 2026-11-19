@@ -24,16 +24,50 @@ runs:
         appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
         NODE
         echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/playwright-browsers" >> "$GITHUB_ENV"
+        echo "PLAYWRIGHT_DEB_ARCHIVES=$RUNNER_TEMP/playwright-debs" >> "$GITHUB_ENV"
+        echo "image-version=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
     - id: browsers
       name: Restore pinned browsers
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.temp }}/playwright-browsers
-        key: playwright-v1-ubuntu24-${{ runner.arch }}-${{ steps.version.outputs.version }}-${{ inputs.engines }}
-    - name: Install WebKit system dependencies
+        key: playwright-v2-ubuntu24-${{ runner.arch }}-${{ steps.version.outputs.version }}-${{ inputs.engines }}
+    - id: debs
+      name: Restore WebKit system packages
       if: contains(inputs.engines, 'webkit')
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/playwright-debs/*.deb
+        key: playwright-debs-v1-ubuntu24-${{ runner.arch }}-${{ steps.version.outputs.image-version }}-${{ steps.version.outputs.version }}-${{ inputs.engines }}
+    - name: Install WebKit system packages from cache
+      if: contains(inputs.engines, 'webkit') && steps.debs.outputs.cache-hit == 'true'
       shell: bash
-      run: vp exec node "$PLAYWRIGHT_CLI" install-deps webkit
+      run: sudo apt-get install --no-install-recommends --no-download -y "$PLAYWRIGHT_DEB_ARCHIVES"/*.deb
+    - name: Install and retain WebKit system packages
+      if: contains(inputs.engines, 'webkit') && steps.debs.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        apt_config=/etc/apt/apt.conf.d/99-ci-playwright-archives
+        trap 'sudo rm -f "$apt_config"' EXIT
+        mkdir -p "$PLAYWRIGHT_DEB_ARCHIVES"
+        printf 'Dir::Cache::Archives "%s";\nBinary::apt-get::APT::Keep-Downloaded-Packages "true";\n' "$PLAYWRIGHT_DEB_ARCHIVES" |
+          sudo tee "$apt_config" > /dev/null
+        vp exec node "$PLAYWRIGHT_CLI" install-deps webkit
+        # The image may already provide some packages. Preserve only downloads.
+        sudo chown -R "$(id -u):$(id -g)" "$PLAYWRIGHT_DEB_ARCHIVES"
+    - name: Restore the Playwright image's Chinese font for Chromium
+      if: "!contains(inputs.engines, 'webkit')"
+      shell: bash
+      run: |
+        # This Ubuntu 24.04 package is also installed by Playwright's WebKit deps.
+        font="$PLAYWRIGHT_BROWSERS_PATH/fonts-wqy-zenhei_0.9.45-8_all.deb"
+        if [[ ! -f "$font" ]]; then
+          mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+          curl --fail --silent --show-error --location --output "$font" \
+            https://archive.ubuntu.com/ubuntu/pool/universe/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb
+        fi
+        echo "496969d65dc5664a3291e678d5cbef6815dc308ee5bf37b656c00af2cb490410  $font" | sha256sum --check
+        sudo dpkg --install "$font"
     - name: Install pinned browsers on a cache miss
       if: steps.browsers.outputs.cache-hit != 'true'
       shell: bash
@@ -68,3 +102,9 @@ runs:
       with:
         path: ${{ runner.temp }}/playwright-browsers
         key: ${{ steps.browsers.outputs.cache-primary-key }}
+    - name: Save WebKit system packages from main
+      if: contains(inputs.engines, 'webkit') && steps.debs.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/ci/cache-experiment'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/playwright-debs/*.deb
+        key: ${{ steps.debs.outputs.cache-primary-key }}
