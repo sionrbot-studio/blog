@@ -221,11 +221,15 @@ target can deploy while the other skips; report both and recover through the new
 HEAD. Content errors are repaired with a new content candidate, without retiring
 a software version. Same-SHA retries require **Re-run all jobs**.
 
+The Pages job takes `PAGE_URL` from the successful deploy action and first checks
+`release-id.txt` there against the candidate SHA, workflow run ID, and attempt.
+The Pages build keeps the personal blog URL for canonical links and RSS.
+
 Each smoke command performs GET requests for representative pages, Pagefind's
 JavaScript, and a missing route:
 
 ```sh
-node scripts/smoke-site.ts https://sionrbot.github.io/blog/
+node scripts/smoke-site.ts "$PAGE_URL"
 node scripts/smoke-site.ts https://sionrbot-blog.pgsnotfound404.workers.dev/
 ```
 
@@ -310,3 +314,22 @@ applies after bootstrap. Existing project history uses the manifest and public
 software Releases, including the explicit recovery boundary described above.
 
 See [Release Please's bootstrap configuration](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md#bootstrapping).
+
+## Personal Pages mirror
+
+After the source Pages deployment and its smoke check both succeed, the independent
+`mirror` job downloads the same run and attempt's checked Pages artifact. It
+rechecks the release candidate before pushing to `sionrbot/sionrbot.github.io`.
+The mirror has a ten-minute job limit, including a five-minute deadline to observe the target deployment.
+Only `blog/` is replaced. The personal site's root `.nojekyll` and other files
+are preserved. The release summary records the target commit and deployment
+verification result. Identical content reuses the existing target commit.
+
+Before promoting this workflow, set the **PERSONAL_PAGES_TOKEN** Actions secret
+in the source repository's `github-pages` environment. Use a fine-grained personal
+access token owned by `sionrbot`, restricted to `sionrbot/sionrbot.github.io`,
+with **Contents: Read and write**. Keep the personal site's Pages source set to
+`main` and `/ (root)`. The public deployment check uses the exact target SHA.
+After the target commit deploys, the workflow verifies the same release marker at
+`https://sionrbot.github.io/blog/` and compares the live `rss.xml` and
+`articles/freedom/` responses byte for byte with the staged Pages artifact.

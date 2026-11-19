@@ -55,6 +55,7 @@ export function detectCiScope(
       'diff',
       '--quiet',
       '--no-ext-diff',
+      '--ignore-submodules=none',
       'HEAD^1',
       'HEAD',
       '--',
@@ -63,7 +64,7 @@ export function detectCiScope(
     );
     return 'unit';
   } catch {
-    warn('Could not establish a complete documentation-only change; running full verification.');
+    warn('Could not establish a reduced verification scope; running full verification.');
     return 'full';
   }
 }

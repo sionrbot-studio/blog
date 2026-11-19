@@ -324,20 +324,8 @@ test('search opens from an article without changing its URL and restores focus',
   await expect(entry).toBeFocused();
 });
 
-test('search contains backdrop scrolling where the browser supports it', async ({
-  app,
-  browser,
-  screen,
-}) => {
+test('search locks page scrolling until the dialog closes', async ({ app, browser, screen }) => {
   await app.open(`${base}/articles/freedom/`);
-  // WebKit does not enforce overscroll containment on the non-scrollable backdrop.
-  // CSS.supports reports syntax support there, so it cannot detect this limitation.
-  test.skip(
-    await browser.evaluate(
-      () => /AppleWebKit/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent),
-    ),
-    'WebKit backdrop overscroll containment is a progressive enhancement',
-  );
   const entry = screen.getByRole('button', 'Search', { exact: true });
   const initialScroll = await browser.evaluate(() => window.scrollY);
   await entry.tap();

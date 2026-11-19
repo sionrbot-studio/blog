@@ -187,3 +187,38 @@ test('unit test changes narrow PR checks, mixed changes keep full coverage', () 
   ).toBe('full');
   expect(repository((write) => write('tests/support/helper.ts')).scope()).toBe('full');
 });
+
+test('the independent Git tree check catches a source change omitted from the path list', () => {
+  const repo = repository((write) => {
+    write('tests/unit/example.test.ts');
+    write('src/example.ts');
+  });
+  const bin = join(repo.cwd, 'bin');
+  mkdirSync(bin);
+  const git = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  writeFileSync(
+    join(bin, 'git'),
+    `#!/bin/sh
+for arg do
+  if [ "$arg" = --name-only ]; then printf 'tests/unit/example.test.ts\\0'; exit 0; fi
+done
+exec "$REAL_GIT" "$@"
+`,
+    { mode: 0o755 },
+  );
+  const output = join(repo.cwd, 'output');
+  const script = fileURLToPath(new URL('../../scripts/ci-scope.ts', import.meta.url));
+  const result = spawnSync(process.execPath, [script], {
+    cwd: repo.cwd,
+    env: {
+      ...process.env,
+      PATH: bin + ':' + process.env.PATH,
+      REAL_GIT: git,
+      GITHUB_EVENT_NAME: 'pull_request',
+      GITHUB_EVENT_PATH: repo.eventPath,
+      GITHUB_OUTPUT: output,
+    },
+  });
+  expect(result.status).toBe(0);
+  expect(readFileSync(output, 'utf8')).toBe('scope=full\n');
+});
