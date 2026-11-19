@@ -42,7 +42,10 @@ runs:
     - name: Install WebKit system packages from cache
       if: contains(inputs.engines, 'webkit') && steps.debs.outputs.cache-hit == 'true'
       shell: bash
-      run: sudo apt-get install --no-install-recommends --no-download -y "$PLAYWRIGHT_DEB_ARCHIVES"/*.deb
+      run: |
+        sudo apt-get install --no-install-recommends -y \
+          -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=- \
+          "$PLAYWRIGHT_DEB_ARCHIVES"/*.deb
     - name: Install and retain WebKit system packages
       if: contains(inputs.engines, 'webkit') && steps.debs.outputs.cache-hit != 'true'
       shell: bash
@@ -67,7 +70,13 @@ runs:
             https://archive.ubuntu.com/ubuntu/pool/universe/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb
         fi
         echo "496969d65dc5664a3291e678d5cbef6815dc308ee5bf37b656c00af2cb490410  $font" | sha256sum --check
-        sudo dpkg --install "$font"
+        font_tree="$(mktemp -d)"
+        trap 'rm -rf "$font_tree"' EXIT
+        dpkg-deb --extract "$font" "$font_tree"
+        sudo cp -a "$font_tree/usr/share/fonts/truetype/wqy" /usr/share/fonts/truetype/
+        sudo cp -a "$font_tree/etc/fonts/." /etc/fonts/
+        font_match="$(fc-match -f '%{file}' 'WenQuanYi Zen Hei')"
+        [[ "$font_match" == /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc ]]
     - name: Install pinned browsers on a cache miss
       if: steps.browsers.outputs.cache-hit != 'true'
       shell: bash
