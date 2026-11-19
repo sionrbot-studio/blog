@@ -106,7 +106,7 @@ jobs:
         with:
           environment: ubuntu-24.04
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: bash scripts/ci-budget.sh 5000 bash -ec 'vp run --no-cache check && vp check'
+      - run: bash scripts/ci-budget.sh 5000 bash scripts/ci-check-types.sh
       - if: ${{ !cancelled() }}
         uses: ./.github/actions/check-setup-budget
 

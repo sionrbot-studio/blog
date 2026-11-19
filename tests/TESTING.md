@@ -252,7 +252,9 @@ conclusion against the selected scope.
 
 Each verification worker must finish environment setup in under 30 seconds, measured
 from the Actions job start through its setup marker. Lint and the combined type
-checks each have a 5-second budget. Each timed unit, timezone, build-contract and
+checks each have a 5-second budget. The types worker runs the read-only format
+check alongside Astro type generation. It waits for formatting, native TypeScript,
+and the Vite+ lint and type checks within that same budget. Each timed unit, timezone, build-contract and
 browser shard has a 60-second budget. Commands run to completion; reaching a
 budget or failing a command fails the worker and the required gate.
 
