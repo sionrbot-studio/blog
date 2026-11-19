@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -36,6 +39,11 @@ jobs:
       - id: scope
         name: Select verification scope
         run: node scripts/ci-scope.ts
+      - name: Require full verification for queue commits
+        if: ${{ github.event_name == 'merge_group' && steps.scope.outputs.scope != 'full' }}
+        run: |
+          echo '::error::Merge queue commits must run the full verification suite.'
+          exit 1
       - id: dependencies
         run: vp install --frozen-lockfile
       - id: vp_task_cache
