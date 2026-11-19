@@ -224,6 +224,12 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           environment: ubuntu-24.04
+      - name: Prepare browser tools alongside the WebKit image pull
+        if: contains(matrix.target, 'webkit')
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
+          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
+        run: bash scripts/ci-install-playwright-tool.sh "$TOOL"
       - name: Start the prepared browser container
         if: contains(matrix.target, 'webkit')
         run: |
@@ -233,8 +239,13 @@ jobs:
           toolchain="$HOME/.local/share/vite-plus"
           toolcache="$HOME/.cache/vite-plus"
           mkdir -p "$RUNNER_TEMP/browser-home" "$toolcache"
+          mounts=()
+          shopt -s nullglob
+          for dir in "$RUNNER_TEMP"/container-tools/{ffmpeg-,chromium_headless_shell-}*; do
+            mounts+=(--volume "$dir:/ms-playwright/${dir##*/}:ro")
+          done
           docker run --detach --pull=never --name ci-browser --ipc=host \
-            --user "$(id -u):$(id -g)" --env HOME --env CI --env SITE_URL \
+            "${mounts[@]}" --user "$(id -u):$(id -g)" --env HOME --env CI --env SITE_URL \
             --env PATH="$toolchain/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
             --volume "$RUNNER_TEMP/browser-home:$HOME" \
             --volume "$toolchain:$toolchain" --volume "$toolcache:$toolcache" \
@@ -245,7 +256,7 @@ jobs:
         if: contains(matrix.target, 'webkit')
         run: |
           docker exec ci-browser sh -ec 'test "$(fc-match -f "%{file}" "WenQuanYi Zen Hei")" = /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
-          docker exec -i ci-browser vp exec node --input-type=module - <<'NODE'
+          docker exec -i ci-browser vp exec node --input-type=module - '${{ matrix.target }}' <<'NODE'
           import { createRequire } from 'node:module';
           import { accessSync, constants } from 'node:fs';
           const require = createRequire(import.meta.url);
@@ -253,7 +264,11 @@ jobs:
           const { version } = webRequire('playwright-core/package.json');
           if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
           const { chromium, webkit } = webRequire('playwright-core');
-          for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
+          accessSync(webkit.executablePath(), constants.X_OK);
+          if (process.argv[2] !== 'webkit') {
+            const browser = await chromium.launch();
+            await browser.close();
+          }
           NODE
       - name: Prepare pinned Chromium on the host
         if: ${{ !contains(matrix.target, 'webkit') }}
