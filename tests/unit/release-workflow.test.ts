@@ -12,7 +12,9 @@ const maintenance = readFileSync(
   'utf8',
 );
 const jobs = [
-  ...template.matchAll(/^  (prepare|pages|workers|refresh):\n([\s\S]*?)(?=^  \w+:|$(?![\s\S]))/gm),
+  ...template.matchAll(
+    /^  (prepare|pages|mirror|workers|refresh):\n([\s\S]*?)(?=^  \w+:|$(?![\s\S]))/gm,
+  ),
 ].map((match) => ({
   id: match[1],
   body: match[2],
@@ -29,18 +31,18 @@ const steps = jobs.flatMap((job) => job.steps);
 // Evaluate actual template conditions with the Actions default success() guard.
 // External operations are controlled outcomes, not live deployment calls. This
 // verifies job/step wiring; GitHub's native scheduler is separately documented.
-function execute(failingStep?: string, superseded = false, kind = 'software') {
+function execute(failingStep?: string, supersededGates: readonly string[] = [], kind = 'software') {
   const results: Record<string, { outcome: string; outputs: Record<string, string> }> = {};
   const attempted: string[] = [];
-  const jobResults: Record<string, string> = {};
+  const jobResults: Record<string, { result: string; outputs: Record<string, string> }> = {};
   for (const job of jobs) {
-    const needs = job.body.match(/^    needs: (\w+)$/m)?.[1];
-    if (needs && jobResults[needs] !== 'success') {
-      jobResults[job.id] = 'skipped';
-      continue;
-    }
-    if (job.id === 'refresh' && kind !== 'software') {
-      jobResults[job.id] = 'skipped';
+    const dependencies = job.body.match(/^    needs: (.+)$/m)?.[1].match(/\w+/g) ?? [];
+    const condition = job.body.match(/^    if: \$\{\{ (.*) \}\}$/m)?.[1];
+    if (
+      dependencies.some((dependency) => jobResults[dependency]?.result !== 'success') ||
+      (condition && !runInNewContext(condition, { needs: jobResults }))
+    ) {
+      jobResults[job.id] = { result: 'skipped', outputs: {} };
       continue;
     }
     let failed = false;
@@ -70,13 +72,30 @@ function execute(failingStep?: string, superseded = false, kind = 'software') {
           step.id === 'candidate'
             ? { kind }
             : step.id.endsWith('_latest')
-              ? { deploy: String(!superseded) }
+              ? { deploy: String(!supersededGates.includes(step.id)) }
               : {},
       };
     }
-    jobResults[job.id] = failed ? 'failure' : 'success';
+    const outputs = job.body.match(/^    outputs:\n((?:^      \S.*\n)+)/m)?.[1] ?? '';
+    jobResults[job.id] = {
+      result: failed ? 'failure' : 'success',
+      outputs: Object.fromEntries(
+        [
+          ...outputs.matchAll(
+            /^      ([\w-]+): \$\{\{ steps\.(\w+)\.(outcome|outputs\.([\w-]+)) \}\}$/gm,
+          ),
+        ].map(([, key, step, property, output]) => [
+          key,
+          (property === 'outcome' ? results[step]?.outcome : results[step]?.outputs[output]) ?? '',
+        ]),
+      ),
+    };
   }
-  return { attempted, failed: Object.values(jobResults).includes('failure'), results };
+  return {
+    attempted,
+    failed: Object.values(jobResults).some((job) => job.result === 'failure'),
+    results,
+  };
 }
 
 describe('fixed-source release wiring', () => {
@@ -148,26 +167,56 @@ describe('fixed-source release wiring', () => {
     for (const id of ['pages_upload', 'pages_deploy', 'mirror_download']) {
       expect(steps.find((step) => step.id === id)?.body).toContain(artifact);
     }
-    expect(execute().attempted).toContain('mirror_verify');
+    const mirror = jobs.find((job) => job.id === 'mirror')!;
+    expect(mirror.steps[0].id).toBe('mirror_attempt');
+    expect(mirror.steps[0].body).toContain(
+      'PREPARED_ATTEMPT: ${{ needs.prepare.outputs.attempt }}',
+    );
+    const { attempted } = execute();
+    expect(attempted.indexOf('pages_smoke')).toBeLessThan(attempted.indexOf('mirror_attempt'));
+    expect(attempted.indexOf('mirror_latest')).toBeLessThan(attempted.indexOf('mirror_push'));
+    expect(attempted).toContain('mirror_verify');
+    for (const prerequisite of ['pages_deploy', 'pages_smoke']) {
+      expect(execute(prerequisite).attempted).not.toContain('mirror_attempt');
+    }
+    expect(execute(undefined, ['pages_latest']).attempted).not.toContain('mirror_attempt');
+  });
+
+  test('supersession after project Pages smoke skips only the mirror push and verification', () => {
+    const result = execute(undefined, ['mirror_latest']);
+    expect(result.failed).toBe(false);
+    expect(result.results.pages_smoke.outcome).toBe('success');
+    expect(result.results.workers_smoke.outcome).toBe('success');
+    expect(result.results.mirror_latest.outputs.deploy).toBe('false');
+    expect(result.attempted).not.toContain('mirror_push');
+    expect(result.attempted).not.toContain('mirror_verify');
+  });
+
+  test('mirror failures keep the run failed without blocking either source deployment', () => {
     for (const prerequisite of [
-      'pages_smoke',
+      'mirror_attempt',
       'mirror_download',
       'mirror_stage',
       'mirror_latest',
     ]) {
       const result = execute(prerequisite);
+      expect(result.failed).toBe(true);
+      expect(result.results.pages_smoke.outcome).toBe('success');
+      expect(result.results.workers_smoke.outcome).toBe('success');
       expect(result.attempted).not.toContain('mirror_push');
       expect(result.attempted).not.toContain('mirror_verify');
     }
-    expect(execute(undefined, true).attempted).not.toContain('mirror_push');
+    expect(execute('mirror_attempt').attempted).not.toContain('mirror_download');
     expect(execute('mirror_push').attempted).not.toContain('mirror_verify');
     const failed = execute('mirror_verify');
     expect(failed.failed).toBe(true);
+    expect(failed.results.pages_smoke.outcome).toBe('success');
     expect(failed.results.workers_smoke.outcome).toBe('success');
+    expect(execute('workers_smoke').results.mirror_verify.outcome).toBe('success');
   });
 
   test('superseded candidates skip both deployments', () => {
-    const result = execute(undefined, true);
+    const result = execute(undefined, ['pages_latest', 'workers_latest']);
     expect(result.failed).toBe(false);
     expect(result.attempted).not.toContain('pages_deploy');
     expect(result.attempted).not.toContain('workers_deploy');
@@ -204,7 +253,7 @@ describe('fixed-source release wiring', () => {
     );
   });
 
-  test.each(['pages', 'workers'])(
+  test.each(['pages', 'mirror', 'workers'])(
     '%s rejects deployment-only retries with stale outputs',
     (platform) => {
       const body = steps.find((step) => step.id === `${platform}_attempt`)!.body;
@@ -241,7 +290,7 @@ describe('fixed-source release wiring', () => {
 
   test('content runs the same validation and both deployments without software publication', () => {
     const software = execute();
-    const content = execute(undefined, false, 'content');
+    const content = execute(undefined, [], 'content');
     expect(content.failed).toBe(false);
     expect(content.attempted).not.toContain('publish');
     for (const id of software.attempted.filter((id) => !['publish'].includes(id))) {
@@ -258,7 +307,7 @@ describe('fixed-source release wiring', () => {
   test.each(['candidate', 'checks', 'workers_build', 'pages_upload'])(
     'content %s failure prevents both deployments and still records preparation',
     (step) => {
-      const result = execute(step, false, 'content');
+      const result = execute(step, [], 'content');
       expect(result.failed).toBe(true);
       expect(result.attempted).not.toContain('pages_deploy');
       expect(result.attempted).not.toContain('workers_deploy');
@@ -299,7 +348,31 @@ describe('fixed-source release wiring', () => {
     expect(result.stdout).toContain('Content deployment requires');
   });
 
-  test('summary distinguishes a successful skipped job from an actual deployment and smoke failure', () => {
+  test.each([
+    [
+      { result: 'skipped', outputs: {} },
+      'skipped (eligible: not established, push: not run, verification: not run, target commit: none)',
+    ],
+    [
+      { result: 'success', outputs: { gate: 'false', push: 'skipped', verify: 'skipped' } },
+      'success (eligible: false, push: skipped, verification: skipped, target commit: none)',
+    ],
+    [
+      { result: 'failure', outputs: { gate: 'true', push: 'failure', verify: 'skipped' } },
+      'failure (eligible: true, push: failure, verification: skipped, target commit: none)',
+    ],
+    [
+      {
+        result: 'failure',
+        outputs: { gate: 'true', push: 'success', verify: 'failure', sha: 'c'.repeat(40) },
+      },
+      `failure (eligible: true, push: success, verification: failure, target commit: ${'c'.repeat(40)})`,
+    ],
+  ])('summary distinguishes each target outcome (%j)', (mirror, mirrorSummary) => {
+    const pagesSkipped = mirror.result === 'skipped';
+    const pages = pagesSkipped
+      ? { gate: 'false', deploy: 'skipped', smoke: 'skipped' }
+      : { gate: 'true', deploy: 'success', smoke: 'success' };
     const block = template.split('      - id: delivery_summary\n')[1];
     const script = block
       .split("          node --input-type=module <<'NODE'\n")[1]
@@ -317,10 +390,8 @@ describe('fixed-source release wiring', () => {
               result: 'success',
               outputs: { version: '1.9.1', tag: 'v1.9.1', 'tag-sha': 'b'.repeat(40) },
             },
-            pages: {
-              result: 'success',
-              outputs: { gate: 'false', deploy: 'skipped', smoke: 'skipped' },
-            },
+            pages: { result: 'success', outputs: pages },
+            mirror,
             workers: {
               result: 'failure',
               outputs: { gate: 'true', deploy: 'success', smoke: 'failure' },
@@ -339,22 +410,27 @@ describe('fixed-source release wiring', () => {
     });
     expect(output).toContain('Software publication: not applicable (content)');
     expect(output).toContain(
-      '| pages | success | superseded; deployment skipped | skipped | skipped |',
+      pagesSkipped
+        ? '| pages | success | superseded; deployment skipped | skipped | skipped |'
+        : '| pages | success | eligible | success | success |',
     );
     expect(output).toContain('| workers | failure | eligible | success | failure |');
+    expect(output).toContain(`Personal Pages mirror: ${mirrorSummary}`);
     expect(output).toContain('Run / attempt: 42 / 2');
   });
 
-  test('both target gates receive the prepared tag SHA and summaries preserve separate results', () => {
-    for (const target of ['pages', 'workers']) {
+  test('each target gate receives the prepared tag SHA and summaries preserve separate results', () => {
+    for (const target of ['pages', 'mirror', 'workers']) {
       expect(steps.find((step) => step.id === `${target}_latest`)!.body).toContain(
         'EXPECTED_TAG_SHA: ${{ needs.prepare.outputs.tag-sha }}',
       );
+    }
+    for (const target of ['pages', 'workers']) {
       expect(jobs.find((job) => job.id === target)!.body).toContain(
         `smoke: \${{ steps.${target}_smoke.outcome }}`,
       );
     }
-    expect(template).toContain('needs: [prepare, pages, workers, refresh]');
+    expect(template).toContain('needs: [prepare, pages, mirror, workers, refresh]');
     expect(template).toContain("output.gate === 'false' ? 'superseded; deployment skipped'");
     expect(template).toContain('not applicable (content)');
   });

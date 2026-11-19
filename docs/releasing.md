@@ -313,8 +313,10 @@ See [Release Please's bootstrap configuration](https://github.com/googleapis/rel
 
 ## Personal Pages mirror
 
-The Pages job mirrors the same run and attempt's checked Pages artifact to
-`sionrbot/sionrbot.github.io` after the source deployment passes its smoke check.
+After the source Pages deployment and its smoke check both succeed, the independent
+`mirror` job downloads the same run and attempt's checked Pages artifact. It
+rechecks the release candidate before pushing to `sionrbot/sionrbot.github.io`.
+The mirror has a ten-minute job limit, including five minutes for target verification.
 Only `blog/` is replaced. The personal site's root `.nojekyll` and other files
 are preserved. The release summary records the target commit and deployment
 verification result. Identical content reuses the existing target commit.

@@ -207,8 +207,6 @@ jobs:
       gate: ${{ steps.pages_latest.outputs.deploy }}
       deploy: ${{ steps.pages_deploy.outcome }}
       smoke: ${{ steps.pages_smoke.outcome }}
-      mirror: ${{ steps.mirror_verify.outcome }}
-      mirror-sha: ${{ steps.mirror_push.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -252,8 +250,39 @@ jobs:
         if: ${{ steps.pages_deploy.outcome == 'success' }}
         run: node scripts/smoke-site.ts https://sionrbot.github.io/blog/
 
+  mirror:
+    needs: [prepare, pages]
+    if: ${{ needs.pages.outputs.deploy == 'success' && needs.pages.outputs.smoke == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      deployment: false
+    outputs:
+      gate: ${{ steps.mirror_latest.outputs.deploy }}
+      push: ${{ steps.mirror_push.outcome }}
+      verify: ${{ steps.mirror_verify.outcome }}
+      sha: ${{ steps.mirror_push.outputs.sha }}
+    steps:
+      - id: mirror_attempt
+        name: Require validation and outputs from this attempt
+        env:
+          PREPARED_ATTEMPT: ${{ needs.prepare.outputs.attempt }}
+        run: |
+          if [ "$PREPARED_ATTEMPT" != "$GITHUB_RUN_ATTEMPT" ]; then
+            echo '::error::Re-run all jobs to validate and rebuild this fixed candidate before deployment.'
+            exit 1
+          fi
+      - id: mirror_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - id: mirror_node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: package.json
       - id: mirror_download
-        if: ${{ steps.pages_smoke.outcome == 'success' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
@@ -374,7 +403,7 @@ jobs:
 
   summary:
     if: ${{ always() }}
-    needs: [prepare, pages, workers, refresh]
+    needs: [prepare, pages, mirror, workers, refresh]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -407,7 +436,7 @@ jobs:
             `- Version PR: ${candidate.pr || 'not applicable / not established'}`,
             `- Run / attempt: ${process.env.GITHUB_RUN_ID} / ${process.env.GITHUB_RUN_ATTEMPT}`,
             `- Preparation: ${jobs.prepare.result}`,
-            `- Personal Pages deployment verification: ${jobs.pages.outputs.mirror || 'not run'} (target commit: ${jobs.pages.outputs['mirror-sha'] || 'none'})`,
+            `- Personal Pages mirror: ${jobs.mirror.result} (eligible: ${jobs.mirror.outputs.gate || 'not established'}, push: ${jobs.mirror.outputs.push || 'not run'}, verification: ${jobs.mirror.outputs.verify || 'not run'}, target commit: ${jobs.mirror.outputs.sha || 'none'})`,
             `- Software publication: ${publication}`,
             `- Version PR refresh: ${jobs.refresh.result}`, '',
             '| Target | Job | Eligibility | Deployment | Smoke |',
