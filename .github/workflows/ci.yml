@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 1
     outputs:
       scope: ${{ steps.select.outputs.scope }}
+      browser_matrix: ${{ steps.select.outputs.browser_matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -77,7 +78,7 @@ jobs:
 
   unit:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: contains(fromJSON('["unit","full"]'), needs.scope.outputs.scope)
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -94,7 +95,7 @@ jobs:
 
   build:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -111,7 +112,7 @@ jobs:
 
   contracts:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
+    if: contains(fromJSON('["contracts","full"]'), needs.scope.outputs.scope)
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     strategy:
@@ -143,7 +144,7 @@ jobs:
 
   browser:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs' && needs.scope.outputs.scope != 'unit'
+    if: contains(fromJSON('["default","i18n","configured-forms","rendering","production-path","full"]'), needs.scope.outputs.scope)
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     container:
@@ -151,15 +152,7 @@ jobs:
       options: --ipc=host
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { variant: default, target: desktop }
-          - { variant: default, target: narrow }
-          - { variant: default, target: webkit }
-          - { variant: i18n, target: 'desktop,narrow,webkit' }
-          - { variant: configured-forms, target: 'desktop,narrow,webkit' }
-          - { variant: rendering, target: 'desktop,narrow,webkit' }
-          - { variant: production-path, target: desktop }
+      matrix: ${{ fromJSON(needs.scope.outputs.browser_matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -210,10 +203,17 @@ jobs:
           node --input-type=module <<'NODE'
           const jobs = JSON.parse(process.env.NEEDS);
           const scope = jobs.scope.outputs.scope;
-          if (!['docs', 'unit', 'full'].includes(scope)) process.exit(1);
+          const browserVariants = ['default', 'i18n', 'configured-forms', 'rendering', 'production-path'];
+          const browser = browserVariants.includes(scope);
+          if (!['docs', 'unit', 'contracts', 'full'].includes(scope) && !browser) process.exit(1);
+          if (process.env.GITHUB_EVENT_NAME !== 'pull_request' && scope !== 'full') process.exit(1);
+          const required = new Set(['scope', 'format']);
+          if (scope !== 'docs') ['lint', 'types'].forEach(name => required.add(name));
+          if (scope === 'unit') required.add('unit');
+          if (scope === 'contracts') required.add('contracts');
+          if (browser) required.add('browser');
           for (const [name, job] of Object.entries(jobs)) {
-            const omitted = (scope === 'docs' && !['scope', 'format'].includes(name))
-              || (scope === 'unit' && ['build', 'browser', 'contracts'].includes(name));
+            const omitted = scope !== 'full' && !required.has(name);
             const expected = omitted ? 'skipped' : 'success';
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }
