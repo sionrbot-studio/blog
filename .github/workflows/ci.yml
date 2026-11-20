@@ -245,10 +245,10 @@ jobs:
             echo "$?" > "$RUNNER_TEMP/browser-tools-status"
           ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
+        if: matrix.target != 'webkit'
+        with: &browser_checkout
           fetch-depth: 0
           filter: blob:none
-      # Let checkout finish before starting dockerd; image preparation overlaps the cache restores.
       - name: Pull and start the pinned browser image in the background
         if: contains(matrix.target, 'webkit')
         run: |
@@ -306,6 +306,9 @@ jobs:
             status=$?
             echo "$status" > "$RUNNER_TEMP/browser-start-status"
           ) </dev/null > "$RUNNER_TEMP/browser-start.log" 2>&1 &
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: matrix.target == 'webkit'
+        with: *browser_checkout
       - name: Start preparing the host Chromium font
         if: ${{ !contains(matrix.target, 'webkit') }}
         run: |
