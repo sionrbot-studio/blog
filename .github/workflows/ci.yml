@@ -433,3 +433,8 @@ jobs:
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }
           NODE
+      - name: Block this acceptance probe after full queue verification
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "::error::Expected probe failure after full merge_group verification"
+          exit 1
