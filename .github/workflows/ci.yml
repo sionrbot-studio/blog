@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 1
     outputs:
       scope: ${{ steps.select.outputs.scope }}
+      browser_matrix: ${{ steps.select.outputs.browser_matrix }}
       browser-image: ${{ steps.images.outputs.profile }}
       playwright-version: ${{ steps.images.outputs.version }}
       playwright-integrity: ${{ steps.images.outputs.integrity }}
@@ -34,17 +35,11 @@ jobs:
           fetch-depth: 0
           filter: blob:none
       - id: select
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = merge_group ]; then
-            echo 'scope=full' >> "$GITHUB_OUTPUT"
-            echo 'CI verification scope: full'
-          else
-            node scripts/ci-scope.ts
-          fi
+        run: node scripts/ci-scope.ts
 
       - id: images
-        name: Resolve pinned WebKit shard image
-        if: steps.select.outputs.scope != 'docs'
+        name: Resolve pinned browser tools and image
+        if: contains(fromJSON('["default","i18n","configured-forms","rendering","production-path","full"]'), steps.select.outputs.scope)
         run: |
           ruby -ryaml -e '
             lock = YAML.load_file("pnpm-lock.yaml")
@@ -85,7 +80,16 @@ jobs:
           environment: ubuntu-24.04
       - run: vp run astro sync
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: bash scripts/ci-budget.sh 5000 vp run --no-cache lint
+      - name: Check formatting, lint and TypeScript
+        run: |
+          bash scripts/ci-budget.sh 5000 bash -c '
+            vp check & combined=$!
+            vp run --no-cache lint:astro & astro=$!
+            status=0
+            wait "$combined" || status=1
+            wait "$astro" || status=1
+            exit "$status"
+          '
       - if: ${{ !cancelled() }}
         uses: ./.github/actions/check-setup-budget
 
@@ -103,13 +107,13 @@ jobs:
         with:
           environment: ubuntu-24.04
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: bash scripts/ci-budget.sh 5000 bash scripts/ci-check-types.sh
+      - run: bash scripts/ci-budget.sh 5000 vp run --no-cache check
       - if: ${{ !cancelled() }}
         uses: ./.github/actions/check-setup-budget
 
   unit:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: needs.scope.outputs.scope == 'unit' || needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -131,7 +135,7 @@ jobs:
 
   build:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -151,7 +155,7 @@ jobs:
 
   contracts:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: needs.scope.outputs.scope == 'contracts' || needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     strategy:
@@ -186,23 +190,64 @@ jobs:
 
   browser:
     needs: scope
-    if: needs.scope.outputs.scope != 'docs'
+    if: contains(fromJSON('["default","i18n","configured-forms","rendering","production-path","full"]'), needs.scope.outputs.scope)
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
       IMAGE_PROFILE: ${{ needs.scope.outputs.browser-image }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { variant: default, target: desktop }
-          - { variant: default, target: narrow }
-          - { variant: default, target: webkit }
-          - { variant: i18n, target: 'desktop,narrow,webkit' }
-          - { variant: configured-forms, target: 'desktop,narrow,webkit' }
-          - { variant: rendering, target: 'desktop,narrow,webkit' }
-          - { variant: production-path, target: desktop }
+      matrix: ${{ fromJSON(needs.scope.outputs.browser_matrix) }}
     steps:
+      - name: Start preparing locked browser tools
+        env:
+          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
+          PW_INTEGRITY: ${{ needs.scope.outputs.playwright-integrity }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: ${{ contains(matrix.target, 'webkit') && '1' || '0' }}
+          TARGET: ${{ matrix.target }}
+          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
+        run: |
+          mkfifo "$RUNNER_TEMP/browser-tools-status"
+          if [[ ",$TARGET," != *,webkit,* ]]; then mkfifo "$RUNNER_TEMP/chromium-font-status"; fi
+          (
+            set +e
+            (
+              set -eo pipefail
+              start=$(date +%s%3N)
+              cli=$(mktemp -d)
+              curl --fail --silent --show-error --location --output "$cli/core.tgz" \
+                "https://registry.npmjs.org/playwright-core/-/playwright-core-$PW_VERSION.tgz"
+              digest=$(openssl dgst -sha512 -binary "$cli/core.tgz" | openssl base64 -A)
+              if [[ "sha512-$digest" != "$PW_INTEGRITY" ]]; then
+                echo "Playwright CLI integrity check failed" >&2
+                exit 1
+              fi
+              tar -xzf "$cli/core.tgz" -C "$cli"
+              engines=("$TOOL")
+              if [[ ",$TARGET," == *,webkit,* ]]; then engines=(webkit "$TOOL"); fi
+              node "$cli/package/cli.js" install --only-shell --no-progress "${engines[@]}"
+              echo "Browser tools started: $start ms; elapsed: $(( $(date +%s%3N) - start )) ms"
+              if [[ ",$TARGET," != *,webkit,* ]]; then
+                read -r status < "$RUNNER_TEMP/chromium-font-status"
+                cat "$RUNNER_TEMP/chromium-font.log"
+                if [[ "$status" != 0 ]]; then exit "$status"; fi
+                node --input-type=module - "$cli/package/index.mjs" <<'NODE'
+          const start = performance.now();
+          const { chromium } = await import(process.argv[2]);
+          const browser = await chromium.launch();
+          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
+          await browser.close();
+          NODE
+              fi
+            )
+            echo "$?" > "$RUNNER_TEMP/browser-tools-status"
+          ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: matrix.target != 'webkit' && matrix.variant != 'rendering'
+        with: &browser_checkout
+          fetch-depth: 0
+          filter: blob:none
       - name: Pull and start the pinned browser image in the background
         if: contains(matrix.target, 'webkit')
         run: |
@@ -260,45 +305,12 @@ jobs:
             status=$?
             echo "$status" > "$RUNNER_TEMP/browser-start-status"
           ) </dev/null > "$RUNNER_TEMP/browser-start.log" 2>&1 &
-      - name: Start preparing locked browser tools
-        env:
-          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
-          PW_INTEGRITY: ${{ needs.scope.outputs.playwright-integrity }}
-          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
-          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: ${{ contains(matrix.target, 'webkit') && '1' || '0' }}
-          TARGET: ${{ matrix.target }}
-          TOOL: ${{ matrix.target == 'webkit' && 'ffmpeg' || 'chromium' }}
-        run: |
-          mkfifo "$RUNNER_TEMP/browser-tools-status"
-          (
-            set +e
-            (
-              set -eo pipefail
-              start=$(date +%s%3N)
-              cli=$(mktemp -d)
-              curl --fail --silent --show-error --location --output "$cli/core.tgz" \
-                "https://registry.npmjs.org/playwright-core/-/playwright-core-$PW_VERSION.tgz"
-              digest=$(openssl dgst -sha512 -binary "$cli/core.tgz" | openssl base64 -A)
-              if [[ "sha512-$digest" != "$PW_INTEGRITY" ]]; then
-                echo "Playwright CLI integrity check failed" >&2
-                exit 1
-              fi
-              tar -xzf "$cli/core.tgz" -C "$cli"
-              engines=("$TOOL")
-              if [[ ",$TARGET," == *,webkit,* ]]; then engines=(webkit "$TOOL"); fi
-              node "$cli/package/cli.js" install --only-shell --no-progress "${engines[@]}"
-              echo "Browser tools started: $start ms; elapsed: $(( $(date +%s%3N) - start )) ms"
-            )
-            echo "$?" > "$RUNNER_TEMP/browser-tools-status"
-          ) </dev/null > "$RUNNER_TEMP/browser-tools.log" 2>&1 &
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          filter: blob:none
+        if: matrix.target == 'webkit' || matrix.variant == 'rendering'
+        with: *browser_checkout
       - name: Start preparing the host Chromium font
         if: ${{ !contains(matrix.target, 'webkit') }}
         run: |
-          mkfifo "$RUNNER_TEMP/chromium-font-status"
           (
             set +e
             bash scripts/ci-install-chromium-font.sh
@@ -337,23 +349,19 @@ jobs:
             await browser.close();
           }
           NODE
-      - name: Prepare pinned Chromium on the host
+      - name: Verify the restored host Playwright version
         if: ${{ !contains(matrix.target, 'webkit') }}
         env:
+          PW_VERSION: ${{ needs.scope.outputs.playwright-version }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/container-tools
         run: |
           echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
-          read -r status < "$RUNNER_TEMP/chromium-font-status"
-          cat "$RUNNER_TEMP/chromium-font.log"
-          if [[ "$status" != 0 ]]; then exit "$status"; fi
           node --input-type=module <<'NODE'
           import { createRequire } from 'node:module';
           const require = createRequire(import.meta.url);
           const web = createRequire(require.resolve('@e2e-dev/web'));
-          const start = performance.now();
-          const browser = await web('playwright-core').chromium.launch();
-          console.log(`Chromium ${browser.version()} launched in ${Math.round(performance.now() - start)} ms`);
-          await browser.close();
+          const { version } = web('playwright-core/package.json');
+          if (version !== process.env.PW_VERSION) throw new Error(`Expected Playwright ${process.env.PW_VERSION}, got ${version}`);
           NODE
       - run: echo "SETUP_FINISHED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Run browser shard
@@ -392,15 +400,39 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           const jobs = JSON.parse(process.env.NEEDS);
-          const scope = jobs.scope.outputs.scope;
-          if (!['docs', 'full'].includes(scope)) process.exit(1);
-          if (process.env.GITHUB_EVENT_NAME === 'merge_group' && scope !== 'full') {
-            throw new Error('Merge groups require full verification');
+          const scope = jobs.scope?.outputs?.scope;
+          const browserTargets = {
+            default: ['desktop', 'narrow', 'webkit'],
+            i18n: ['desktop,narrow,webkit'],
+            'configured-forms': ['desktop,narrow,webkit'],
+            rendering: ['desktop,narrow,webkit'],
+            'production-path': ['desktop'],
+          };
+          const browserScope = Object.hasOwn(browserTargets, scope);
+          if (!['docs', 'unit', 'contracts', 'full'].includes(scope) && !browserScope) {
+            throw new Error('Unknown verification scope: ' + scope);
           }
+          if (process.env.GITHUB_EVENT_NAME !== 'pull_request' && scope !== 'full') {
+            throw new Error('Only pull requests may use reduced verification');
+          }
+          const expectedBrowsers = Object.entries(browserTargets)
+            .filter(([variant]) => scope === 'full' || variant === scope)
+            .flatMap(([variant, targets]) => targets.map(target => ({ variant, target })));
+          const plannedBrowsers = JSON.parse(jobs.scope.outputs.browser_matrix).include;
+          if (!Array.isArray(plannedBrowsers) || plannedBrowsers.length !== expectedBrowsers.length ||
+              !expectedBrowsers.every(({ variant, target }) =>
+                plannedBrowsers.some(row => row.variant === variant && row.target === target))) {
+            throw new Error('Browser matrix does not cover the selected scope: ' + scope);
+          }
+          const selected = ['scope', 'format'];
+          if (scope !== 'docs') selected.push('lint', 'types');
+          if (scope === 'unit') selected.push('unit');
+          if (scope === 'contracts') selected.push('contracts');
+          if (browserScope) selected.push('browser');
           for (const name of ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {
             const job = jobs[name];
             if (!job) throw new Error('Missing required job: ' + name);
-            const expected = scope === 'docs' && !['scope', 'format'].includes(name) ? 'skipped' : 'success';
+            const expected = scope === 'full' || selected.includes(name) ? 'success' : 'skipped';
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }
           NODE

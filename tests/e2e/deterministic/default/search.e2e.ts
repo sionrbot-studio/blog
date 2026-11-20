@@ -327,8 +327,16 @@ test('search opens from an article without changing its URL and restores focus',
 test('search locks page scrolling until the dialog closes', async ({ app, browser, screen }) => {
   await app.open(`${base}/articles/freedom/`);
   const entry = screen.getByRole('button', 'Search', { exact: true });
+  const dialog = screen.getByRole('dialog', 'Search');
   const initialScroll = await browser.evaluate(() => window.scrollY);
   await entry.tap();
+  await expect(dialog).toBeVisible();
+  expect(
+    await browser.evaluate(
+      () =>
+        getComputedStyle(document.querySelector('dialog:modal')!, '::backdrop').overscrollBehavior,
+    ),
+  ).toBe('contain');
   await browser.mouse.move(4, 350);
   await browser.mouse.wheel(0, 600);
   await browser.evaluate(
@@ -338,8 +346,9 @@ test('search locks page scrolling until the dialog closes', async ({ app, browse
       ),
   );
   expect(await browser.evaluate(() => window.scrollY)).toBe(initialScroll);
+  await expect(dialog).toBeVisible();
   await screen.tapAt({ x: 4, y: 4 });
-  await expect(screen.getByRole('dialog', 'Search')).toBeHidden();
+  await expect(dialog).toBeHidden();
   await expect(entry).toBeFocused();
   expect(await browser.evaluate(() => window.scrollY)).toBe(initialScroll);
   await browser.mouse.move(4, 350);

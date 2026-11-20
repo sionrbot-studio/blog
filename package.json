@@ -13,6 +13,7 @@
     }
   },
   "scripts": {
+    "prepare": "vp config --no-agent",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",

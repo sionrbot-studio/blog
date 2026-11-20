@@ -92,6 +92,25 @@ use the lower-level `createFixture` from
 `tests/support/build-fixture.ts` to work in an isolated temporary copy. Always
 await `fixture.dispose()` in `finally` or `afterAll`, including failed tests.
 
+### Shared workers and cleanup
+
+Vitest reuses workers within each project and shuffles file and test order.
+Replay a reported seed with `vp test --project unit --sequence.seed=<seed>`
+or use `--project build` for a build failure.
+
+- Keep imported modules read-only. Use a fresh factory instance for mutable
+  state, and build an isolated fixture for any filesystem or app configuration changes.
+- Use `vi.stubEnv`, `vi.stubGlobal` and `vi.spyOn` for process-wide changes.
+  The shared setup restores stubs, spies, mock state, real timers, the working
+  directory, environment variables and global bindings after each file.
+  Restore state in `afterEach` if it can affect another test in the same file.
+- Dispose of fixtures, timers, listeners and child processes in `finally`,
+  `afterEach` or `afterAll`, including after failed assertions. Await asynchronous
+  cleanup before the file finishes.
+- Use project aliases for stable virtual-module substitutes. Scope other
+  module mocks to a single test and undo them before another file can import
+  the module. Avoid clearing the worker's entire module cache.
+
 For a focused run:
 
 ```sh
@@ -129,8 +148,10 @@ after root-path browser runs, including failures, before default build tests.
 
 Chromium-only CI shards run directly on the Ubuntu host. Before checkout, the locked Playwright
 CLI starts installing its matching headless shell and FFmpeg. After checkout, it installs and verifies
-the checksum-pinned WenQuanYi font in parallel with dependency restore. The
-runner launches Chromium once its tools, font and dependencies are ready.
+the checksum-pinned WenQuanYi font in parallel with dependency restore. The locked CLI
+launches and closes Chromium once its tools and font are ready. After dependency
+restore, the runner checks that the Playwright version used by the test driver
+matches the CLI before marking setup complete.
 Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
 build-time Playwright CLI archive and the Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
@@ -243,7 +264,17 @@ in these artifacts or CI, rather than adding execution history to these guides.
 ## CI and coverage boundaries
 
 [CI](../.github/workflows/ci.yml) checks documentation formatting on documentation-only
-PRs. Full verification runs formatting, lint, types, unit/timezone tests, builds,
+PRs. A PR confined to `tests/unit/**/*.test.ts` runs formatting, lint, types,
+translation checks and both complete unit and timezone suites. A PR confined to
+`tests/build/**/*.test.ts` runs formatting, lint, types and both contract shards.
+Changes confined to `.e2e.ts` files in one known deterministic browser variant
+run formatting, lint, types and every browser target configured for that variant.
+Before selecting a reduced scope, CI independently compares the merge tree with
+its base, excluding only paths allowed by that scope. Mixed, shared and unknown
+changes use the full suite. If the independent comparison finds a path omitted
+by the selector, the scope job names it and fails.
+
+Full verification runs formatting, lint, types, unit/timezone tests, builds,
 link checks, build contract shards and browser variants in parallel. Manual runs and merge groups targeting `main`
 use the full suite. Queue candidates always execute unit and timezone tests uncached. Each shard builds the root baseline it consumes. The default
 browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
@@ -251,10 +282,10 @@ retain their target sets. The required `verify` job checks every dependency's
 conclusion against the selected scope.
 
 Each verification worker must finish environment setup in under 30 seconds, measured
-from the Actions job start through its setup marker. Lint and the combined type
-checks each have a 5-second budget. The types worker runs the read-only format
-check alongside Astro type generation. It waits for formatting, native TypeScript,
-and the Vite+ lint and type checks within that same budget. Each timed unit, timezone, build-contract and
+from the Actions job start through its setup marker. The types worker runs Astro sync and native TypeScript
+under one 5-second budget. After Astro sync, the lint worker runs `vp check`
+and Astro ESLint concurrently under its own 5-second budget. Both must succeed.
+Each timed unit, timezone, build-contract and
 browser shard has a 60-second budget. Commands run to completion; reaching a
 budget or failing a command fails the worker and the required gate.
 
@@ -285,6 +316,8 @@ Search dialog checks cover pointer and keyboard opening, native focus restoratio
 and the inability to focus background controls while the modal is open. Tab may
 move focus to browser chrome; this is permitted by native modal behavior.
 On desktop Chromium, narrow Chromium and WebKit, the backdrop scroll test sends
-wheel input while search is open and after it closes. It checks that the page
+wheel input while search is open and after it closes. It checks that the open
+dialog’s backdrop computes to `overscroll-behavior: contain` and that the
+dialog remains visible after wheel input. It also checks that the page
 holds its position through dismissal, focus returns to the opener, and the page
 responds to the next wheel input.

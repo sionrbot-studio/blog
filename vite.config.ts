@@ -4,6 +4,12 @@ import { defineConfig } from 'vite-plus';
 // Allow Vite+'s tsrs-lint to load the .astro mapper registered in tsconfig.json.
 process.env.TSRS_LINT_RUN_EXTERNAL_CODE = '1';
 
+const sharedWorkers = {
+  isolate: false,
+  setupFiles: ['tests/support/reset-test-state.ts'],
+  sequence: { shuffle: { tests: true } },
+};
+
 // ESLint also checks .astro files with the Astro parser and client-side processor.
 export default defineConfig({
   run: {
@@ -15,12 +21,17 @@ export default defineConfig({
     },
   },
   test: {
+    sequence: { shuffle: { files: true } },
     projects: [
       {
         test: {
+          ...sharedWorkers,
           name: 'unit',
           include: ['tests/unit/**/*.test.ts'],
           alias: {
+            'astro:i18n': fileURLToPath(
+              new URL('./tests/support/astro-i18n.stub.ts', import.meta.url),
+            ),
             'astro:content': fileURLToPath(
               new URL('./tests/support/astro-content.stub.ts', import.meta.url),
             ),
@@ -29,12 +40,13 @@ export default defineConfig({
       },
       {
         test: {
+          ...sharedWorkers,
           name: 'build',
           include: ['tests/build/**/*.test.ts'],
           // Fixtures own their sources, output and caches; cap concurrent test files.
           fileParallelism: true,
           maxWorkers: 2,
-          sequence: { groupOrder: 1 },
+          sequence: { ...sharedWorkers.sequence, groupOrder: 1 },
           testTimeout: 180_000,
           hookTimeout: 180_000,
         },

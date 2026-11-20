@@ -6,8 +6,12 @@ start=$(date +%s%3N)
 font_tree="$(mktemp -d)"
 trap 'rm -rf "$font_tree"' EXIT
 font="$font_tree/fonts-wqy-zenhei_0.9.45-8_all.deb"
-curl --fail --silent --show-error --location --output "$font" \
-  https://archive.ubuntu.com/ubuntu/pool/universe/f/fonts-wqy-zenhei/fonts-wqy-zenhei_0.9.45-8_all.deb
+package_path="ubuntu/pool/universe/f/fonts-wqy-zenhei/${font##*/}"
+if ! curl --fail --silent --show-error --location --max-time 8 --output "$font" \
+  "https://azure.archive.ubuntu.com/$package_path"; then
+  curl --fail --silent --show-error --location --output "$font" \
+    "https://archive.ubuntu.com/$package_path"
+fi
 echo "496969d65dc5664a3291e678d5cbef6815dc308ee5bf37b656c00af2cb490410  $font" | sha256sum --check
 checked=$(date +%s%3N)
 dpkg-deb --extract "$font" "$font_tree"
