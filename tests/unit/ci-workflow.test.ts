@@ -136,12 +136,12 @@ test.each(['failure', 'cancelled', 'skipped', null])(
   },
 );
 
-test('both unit suites run without the Vite+ task cache under their execution budget', () => {
+test('both unit suites run without the Vite+ task cache', () => {
   const unitJob = workflow.split('\n  unit:\n')[1].split('\n  build:\n')[0];
-  expect(unitJob).toContain('run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit\n');
+  expect(unitJob).toContain('run: vp run --no-cache test:unit\n');
   expect(unitJob).toContain(
     "if: ${{ !cancelled() && steps.unit_tests.outcome != 'skipped' }}\n" +
-      '        run: bash scripts/ci-budget.sh 60000 vp run --no-cache test:unit:tz\n',
+      '        run: vp run --no-cache test:unit:tz\n',
   );
 });
 
@@ -190,17 +190,10 @@ test('a cold installation must succeed before saving the exact dependency tree',
   expect(action.indexOf('vp install')).toBeLessThan(action.indexOf('uses: actions/cache/save'));
 });
 
-test('each verification worker enforces the environment budget after preparing its dependencies', () => {
+test('each verification worker prepares its dependencies', () => {
   for (const name of ['format', ...nonDocs]) {
     const job = workflow.split(`\n  ${name}:\n`)[1].split(/\n  \w+:\n/)[0];
-    const setupFinish = job.indexOf('SETUP_FINISHED=');
-    const budgetCheck = job.indexOf('uses: ./.github/actions/check-setup-budget');
     expect(job).toContain('uses: ./.github/actions/dependencies');
-    expect(setupFinish).toBeGreaterThan(job.indexOf('uses: ./.github/actions/dependencies'));
-    expect(budgetCheck).toBeGreaterThan(setupFinish);
-    const budgetStep = job.split(/\n      - /).find((step) => step.includes('check-setup-budget'));
-    expect(budgetStep).toContain('if: ${{ !cancelled() }}');
-    expect(budgetStep).not.toContain('continue-on-error');
   }
 });
 

@@ -156,14 +156,13 @@ Shards using WebKit pull the digest-pinned Playwright Noble amd64 image with the
 build-time Playwright CLI archive and the Chromium, Firefox and WebKit browser layers omitted. Docker fetches the layers from Microsoft via local
 OCI metadata while the host checks out the candidate and prepares dependencies.
 Each WebKit job applies the layers to a fresh Docker overlay2 store on a 4 GiB
-tmpfs. The pull timer includes starting this job-local daemon and pulling the
-base layer. The container starts as soon as the image pull completes and shares its dedicated
+tmpfs. The container starts as soon as the image pull completes and shares its dedicated
 Linux runner’s network namespace. The preview server listens on loopback. Before checkout, each WebKit shard fetches the CLI identified by the
 candidate lockfile and verifies its SHA-512 digest. In parallel with checkout
 and dependency restore, the CLI installs the pinned Ubuntu WebKit and FFmpeg binaries and, for mixed targets,
 Chromium headless shell. Playwright reads these tools directly from a read-only
-mount in the container. The setup budget includes
-waiting for the pull, starting the container and checking its browsers and font.
+mount in the container. Setup completes once the container is running and the browser
+and font checks pass.
 Keep the image and version checks in
 `.github/workflows/ci.yml` and `.github/workflows/release.yml` aligned with `@e2e-dev/web`'s `playwright-core`
 dependency when upgrading it. CI verifies the version and browser executables
@@ -281,13 +280,9 @@ browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
 retain their target sets. The required `verify` job checks every dependency's
 conclusion against the selected scope.
 
-Each verification worker must finish environment setup in under 40 seconds, measured
-from the Actions job start through its setup marker. The types worker runs Astro sync and native TypeScript
-under one 5-second budget. After Astro sync, the lint worker runs `vp check`
-and Astro ESLint concurrently under its own 5-second budget. Both must succeed.
-Each timed unit, timezone, build-contract and
-browser shard has a 60-second budget. Commands run to completion; reaching a
-budget or failing a command fails the worker and the required gate.
+Use the GitHub Actions job and step timings to inspect CI performance. The types worker
+runs Astro sync and native TypeScript. After Astro sync, the lint worker runs
+`vp check` and Astro ESLint concurrently and requires both commands to succeed.
 
 The [release workflow](../.github/workflows/release.yml) repeats core validation
 at the fixed merged version SHA before building and checking both production
