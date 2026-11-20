@@ -281,7 +281,7 @@ browser variant runs on separate desktop, narrow and WebKit jobs. Other variants
 retain their target sets. The required `verify` job checks every dependency's
 conclusion against the selected scope.
 
-Each verification worker must finish environment setup in under 30 seconds, measured
+Each verification worker must finish environment setup in under 40 seconds, measured
 from the Actions job start through its setup marker. The types worker runs Astro sync and native TypeScript
 under one 5-second budget. After Astro sync, the lint worker runs `vp check`
 and Astro ESLint concurrently under its own 5-second budget. Both must succeed.

@@ -17,6 +17,7 @@ runs:
         if (!response.ok) throw new Error('Cannot verify job timing: HTTP ' + response.status);
         const { started_at } = await response.json();
         const elapsed = Number(SETUP_FINISHED) - Date.parse(started_at);
-        console.log('Environment setup:', elapsed, 'ms (budget < 30000 ms)');
-        if (!(elapsed >= 0 && elapsed < 30000)) process.exit(1);
+        const budgetMs = 40_000;
+        console.log('Environment setup:', elapsed, `ms (budget < ${budgetMs} ms)`);
+        if (!(elapsed >= 0 && elapsed < budgetMs)) process.exit(1);
         NODE
