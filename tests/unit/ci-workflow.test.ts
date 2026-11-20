@@ -74,7 +74,7 @@ test.each([
 test('documentation verification keeps the formatting job and skips full-only checks', () => {
   const formatJob = workflow.split('\n  format:\n')[1].split('\n  lint:\n')[0];
   expect(formatJob).toContain('run: vp fmt --check');
-  expect(formatJob.match(/^    if:.*$/gm)).toEqual(["    if: github.event_name != 'merge_group'"]);
+  expect(formatJob).not.toMatch(/^    if:/m);
   expect(verify('docs', { unit: 'success' })).toBe(1);
 });
 
