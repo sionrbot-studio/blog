@@ -53,7 +53,6 @@ jobs:
 
   format:
     needs: scope
-    if: github.event_name != 'merge_group'
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -137,6 +136,9 @@ jobs:
   build:
     needs: scope
     if: needs.scope.outputs.scope == 'full'
+    concurrency:
+      group: queue-cancel-build-${{ github.run_id }}-${{ github.run_attempt }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -153,6 +155,12 @@ jobs:
         run: vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
       - if: ${{ !cancelled() }}
         uses: ./.github/actions/check-setup-budget
+      - name: Wait for the queue probe to cancel this build
+        if: github.event_name == 'merge_group'
+        run: |
+          sleep 120
+          echo "::error::The expected build cancellation did not arrive"
+          exit 1
 
   contracts:
     needs: scope
@@ -388,6 +396,17 @@ jobs:
           retention-days: 7
       - if: ${{ !cancelled() }}
         uses: ./.github/actions/check-setup-budget
+
+  cancel_build_probe:
+    if: ${{ always() && github.event_name == 'merge_group' }}
+    needs: [format, lint, types, unit, contracts, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    concurrency:
+      group: queue-cancel-build-${{ github.run_id }}-${{ github.run_attempt }}
+      cancel-in-progress: true
+    steps:
+      - run: echo "Claimed this queue run's build concurrency group"
 
   verify:
     if: always()

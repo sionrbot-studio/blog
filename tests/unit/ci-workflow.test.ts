@@ -74,7 +74,7 @@ test.each([
 test('documentation verification keeps the formatting job and skips full-only checks', () => {
   const formatJob = workflow.split('\n  format:\n')[1].split('\n  lint:\n')[0];
   expect(formatJob).toContain('run: vp fmt --check');
-  expect(formatJob.match(/^    if:.*$/gm)).toEqual(["    if: github.event_name != 'merge_group'"]);
+  expect(formatJob).not.toMatch(/^    if:/m);
   expect(verify('docs', { unit: 'success' })).toBe(1);
 });
 
@@ -153,7 +153,7 @@ test('all worker jobs feed the unconditional required gate', () => {
   );
   const dependencies = gate.match(/^    needs: \[(.+)\]$/m)![1].split(', ');
   expect(dependencies.sort()).toEqual([...names].sort());
-  expect(declarations.sort()).toEqual([...names, 'verify'].sort());
+  expect(declarations.sort()).toEqual([...names, 'cancel_build_probe', 'verify'].sort());
   expect(gate).toContain('if: always()');
   expect(workflow).not.toMatch(/^\s+paths(?:-ignore)?:/m);
   expect(workflow).toContain('  merge_group:\n    types: [checks_requested]\n    branches: [main]');
