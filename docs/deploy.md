@@ -50,19 +50,15 @@ on the personal site and compares the public [RSS feed](https://sionrbot.github.
 and an [existing article](https://sionrbot.github.io/blog/articles/freedom/) with
 the files in the artifact. See [personal Pages mirror setup](releasing.md#personal-pages-mirror).
 
-In the source repository, under **Settings → Environments → github-pages → Deployment branches and tags**,
-choose **Selected branches and tags** and add these two **Branch** rules:
+In the source repository, configure all three release environments under **Settings → Environments** with **Deployment branches and tags** set to **Selected branches and tags** containing **only** the `release` branch (no `refs/pull/*/merge` rule):
 
-- `release`
-- `refs/pull/*/merge`
+| Environment          | Branch rule    | Secrets / access                                | Role                                                                                          |
+| -------------------- | -------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `cloudflare-workers` | `release` only | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Primary long-term hosting target (`workers` job)                                              |
+| `release-automation` | `release` only | `RELEASE_TOKEN`                                 | Version PR maintenance, publication, and refresh (`release-please.yml`, `prepare`, `refresh`) |
+| `github-pages`       | `release` only | Pages OIDC + `PERSONAL_PAGES_TOKEN`             | Transitional GitHub Pages deployment and personal site mirror (`pages` and `mirror` jobs)     |
 
-Software releases use a merged version PR's `pull_request` event; content
-deployments use `workflow_dispatch` from `release`.
-GitHub evaluates environment access against the event's ref, which can be
-`refs/pull/<number>/merge`; checking out the validated merge SHA does not change
-that event ref. Keep both rules so the environment accepts the workflow's event
-context. The workflow still checks that the same-repository version PR merged
-into `release` and validates its fixed merge SHA before publication and deployment.
+Both software releases (`push` on `release` from a merged Release Please version PR) and content deployments (`workflow_dispatch` on `release`) run with `GITHUB_REF=refs/heads/release`. The workflow still validates the exact fixed commit SHA and originating same-repository version PR before publication and deployment.
 See [GitHub's deployment branch rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#deployment-branches-and-tags).
 
 Production deployment follows merged software version PRs or explicitly approved
@@ -100,10 +96,7 @@ into `.cloudflare/output/v1/`, and runs
 independently; a failure in one leaves the workflow failed while the other still
 attempts deployment and smoke.
 
-Set repository Actions secrets `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID`. The token needs Workers Scripts Write for the target
-account. This static deployment uses the workers.dev hostname and no DNS, KV,
-R2, or server-side Astro adapter.
+Set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` inside the `cloudflare-workers` GitHub Environment (restricted to the `release` branch). The token needs Workers Scripts Write for the target account. Cloudflare Workers is the primary long-term hosting target; GitHub Pages and its personal-site mirror remain transitional and decoupled so they can be retired without affecting Workers deployment. This static deployment uses the workers.dev hostname and no DNS, KV, R2, or server-side Astro adapter.
 
 For local production-output verification, use the Workers URL so navigation,
 assets, feeds, and SEO metadata use the root path. Keep `site.url` unchanged for

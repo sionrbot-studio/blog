@@ -70,7 +70,7 @@ export function releaseRunSnapshot(run: ReleaseRun, jobs: ReleaseJob[]) {
     run.run_attempt < 1 ||
     (identity[1] === 'content'
       ? run.event !== 'workflow_dispatch' || run.head_branch !== 'release'
-      : run.event !== 'pull_request')
+      : run.event !== 'push' || run.head_branch !== 'release')
   )
     throw new Error('Expected a fixed software/content release workflow run');
   const job = (name: string) => {

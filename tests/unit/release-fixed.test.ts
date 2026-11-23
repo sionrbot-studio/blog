@@ -37,6 +37,7 @@ const published = { id: 5, tag_name: 'v2.0.0', draft: false, prerelease: false }
 function api(overrides: Partial<FixedReleaseApi> = {}): FixedReleaseApi {
   return {
     branchHead: async () => sha,
+    commitPullRequests: async () => [pr],
     pullRequest: async () => pr,
     file: async (path) =>
       path === 'package.json'
@@ -52,7 +53,7 @@ function api(overrides: Partial<FixedReleaseApi> = {}): FixedReleaseApi {
     ...overrides,
   };
 }
-const event = { action: 'closed', pull_request: pr };
+const pushEvent = { ref: 'refs/heads/release', after: sha };
 
 describe('fixed release candidate', () => {
   it('rejects checkout drift even when the release API reports a valid candidate', () => {
@@ -63,11 +64,15 @@ describe('fixed release candidate', () => {
     expect(() => validateCandidateCheckout(candidate, sha, '2.0.0', undefined)).toThrow('Checkout');
     expect(() => validateCandidateCheckout(candidate, sha, '2.0.0', '2.0.0')).not.toThrow();
   });
-  it('reads versions only at the original merge SHA on every retry', async () => {
+  it('reads versions only at the original push commit SHA on every retry', async () => {
     const source = api();
     const file = vi.spyOn(source, 'file');
-    expect(await fixedCandidate(source, 'owner/blog', event)).toEqual(candidate);
-    expect(await fixedCandidate(source, 'owner/blog', event)).toEqual(candidate);
+    expect(
+      await fixedCandidate(source, 'owner/blog', pushEvent, 'refs/heads/release', sha),
+    ).toEqual(candidate);
+    expect(
+      await fixedCandidate(source, 'owner/blog', pushEvent, 'refs/heads/release', sha),
+    ).toEqual(candidate);
     expect(file.mock.calls).toEqual([
       ['package.json', sha],
       ['.release-please-manifest.json', sha],
@@ -76,50 +81,90 @@ describe('fixed release candidate', () => {
     ]);
   });
   it.each([
+    [{ ref: 'refs/heads/main', after: sha }, 'refs/heads/release', sha],
+    [pushEvent, 'refs/heads/main', sha],
+    [{ ref: 'refs/heads/release', after: 'release' }, 'refs/heads/release', sha],
+    [pushEvent, 'refs/heads/release', 'b'.repeat(40)],
+  ])('rejects invalid push context %#', async (event, ref, executionSha) => {
+    await expect(fixedCandidate(api(), 'owner/blog', event, ref, executionSha)).rejects.toThrow(
+      'push event',
+    );
+  });
+  it.each([
     { ...pr, merged: false },
     { ...pr, base: { ...pr.base, ref: 'other' } },
     { ...pr, head: { ...pr.head, repo: { full_name: 'fork/blog' } } },
     { ...pr, head: { ...pr.head, ref: 'feature' } },
-    { ...pr, merge_commit_sha: 'main' },
-  ])('rejects unsupported source %#', async (pull_request) => {
-    await expect(fixedCandidate(api(), 'owner/blog', { ...event, pull_request })).rejects.toThrow();
-  });
-  it('rejects remote merge changes and inconsistent versions', async () => {
+    { ...pr, merge_commit_sha: 'b'.repeat(40) },
+  ])('rejects unsupported associated PR %#', async (associated) => {
     await expect(
       fixedCandidate(
-        api({ pullRequest: async () => ({ ...pr, merge_commit_sha: 'b'.repeat(40) }) }),
+        api({
+          commitPullRequests: async () => [associated],
+          pullRequest: async () => associated,
+        }),
         'owner/blog',
-        event,
+        pushEvent,
+        'refs/heads/release',
+        sha,
       ),
-    ).rejects.toThrow('original event');
+    ).rejects.toThrow('matching this release commit');
+  });
+  it('rejects ambiguous Release PRs and inconsistent versions', async () => {
+    await expect(
+      fixedCandidate(
+        api({
+          commitPullRequests: async () => [pr, { ...pr, number: 11 }],
+          pullRequest: async (number) => ({ ...pr, number }),
+        }),
+        'owner/blog',
+        pushEvent,
+        'refs/heads/release',
+        sha,
+      ),
+    ).rejects.toThrow('Ambiguous');
     await expect(
       fixedCandidate(
         api({ file: async () => '{"version":"2.0.0",".":"2.0.1"}' }),
         'owner/blog',
-        event,
+        pushEvent,
+        'refs/heads/release',
+        sha,
       ),
     ).rejects.toThrow('version files');
   });
   it('blocks retired unpublished candidates, while published retries preserve history', async () => {
     const retired = api({ pullRequest: async () => ({ ...pr, labels: [] }) });
-    await expect(fixedCandidate(retired, 'owner/blog', event)).rejects.toThrow('retired');
+    await expect(
+      fixedCandidate(retired, 'owner/blog', pushEvent, 'refs/heads/release', sha),
+    ).rejects.toThrow('retired');
     await expect(
       fixedCandidate(
         api({ ...retired, release: async () => published, tagCommit: async () => sha }),
         'owner/blog',
-        event,
+        pushEvent,
+        'refs/heads/release',
+        sha,
       ),
     ).resolves.toEqual(candidate);
   });
   it('blocks conflicting tags and drafts without deleting them', async () => {
     await expect(
-      fixedCandidate(api({ tagCommit: async () => 'b'.repeat(40) }), 'owner/blog', event),
+      fixedCandidate(
+        api({ tagCommit: async () => 'b'.repeat(40) }),
+        'owner/blog',
+        pushEvent,
+        'refs/heads/release',
+        sha,
+      ),
     ).rejects.toThrow('Conflicting tag');
     await expect(
       fixedCandidate(
         api({ release: async () => ({ ...published, draft: true }) }),
         'owner/blog',
-        event,
+        pushEvent,
+        'refs/heads/release',
+        sha,
       ),
     ).rejects.toThrow('reconciliation');
   });
@@ -346,10 +391,13 @@ describe('native release API boundaries', () => {
     const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(input instanceof Request ? input.url : input);
       const path = url.pathname;
+      if (path.endsWith(`/commits/${sha}/pulls`)) {
+        return Response.json([pr]);
+      }
       if (path.endsWith('/pulls/10')) {
         const version = new Headers(init?.headers).get('X-GitHub-Api-Version');
         // GitHub 2026-03-10 removes this field from REST PR responses,
-        // while the original pull_request webhook still carries it.
+        // so pin 2022-11-28 to verify merge_commit_sha against the push SHA.
         const withoutMergeSha = { ...pr, merge_commit_sha: undefined };
         return Response.json(version === '2022-11-28' ? pr : withoutMergeSha);
       }
@@ -367,7 +415,13 @@ describe('native release API boundaries', () => {
       throw new Error(`Unexpected request: ${path}`);
     });
     await expect(
-      fixedCandidate(fixedReleaseApi('owner/blog', 'test-token', fetcher), 'owner/blog', event),
+      fixedCandidate(
+        fixedReleaseApi('owner/blog', 'test-token', fetcher),
+        'owner/blog',
+        pushEvent,
+        'refs/heads/release',
+        sha,
+      ),
     ).resolves.toEqual(candidate);
   });
 

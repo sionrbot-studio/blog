@@ -54,8 +54,18 @@ interface PublishedRelease {
   draft: boolean;
   prerelease: boolean;
 }
+export interface CommitPullRequestSummary {
+  number: number;
+  base?: { ref?: string; repo?: { full_name?: string } };
+  head?: { ref?: string; repo?: { full_name?: string } };
+}
+export interface PushReleaseEvent {
+  ref?: unknown;
+  after?: unknown;
+}
 export interface FixedReleaseApi {
   branchHead(): Promise<string>;
+  commitPullRequests(sha: string): Promise<CommitPullRequestSummary[]>;
   pullRequest(number: number): Promise<MergedPullRequest>;
   file(path: string, sha: string): Promise<string>;
   tagCommit(tag: string): Promise<string | null>;
@@ -83,18 +93,54 @@ function validatePullRequest(pr: MergedPullRequest, repository: string): void {
 export async function fixedCandidate(
   api: FixedReleaseApi,
   repository: string,
-  event: { action: string; pull_request: MergedPullRequest },
+  event: PushReleaseEvent,
+  ref: string | undefined,
+  executionSha?: string,
 ): Promise<FixedCandidate> {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || event.action !== 'closed') {
-    throw new Error('Expected the original closed Release PR event');
+  const sha = event.after;
+  if (
+    !/^[\w.-]+\/[\w.-]+$/.test(repository) ||
+    ref !== 'refs/heads/release' ||
+    event.ref !== 'refs/heads/release' ||
+    typeof sha !== 'string' ||
+    !/^[a-f0-9]{40}$/.test(sha) ||
+    (executionSha !== undefined && executionSha !== sha)
+  ) {
+    throw new Error('Expected a push event on refs/heads/release with a complete commit SHA');
   }
-  validatePullRequest(event.pull_request, repository);
-  const pr = await api.pullRequest(event.pull_request.number);
-  validatePullRequest(pr, repository);
-  if (pr.merge_commit_sha !== event.pull_request.merge_commit_sha) {
-    throw new Error('Release PR merge SHA differs from the original event');
+  const associated = await api.commitPullRequests(sha);
+  const candidateNumbers = [
+    ...new Set(
+      associated
+        .filter(
+          (item) =>
+            Number.isSafeInteger(item.number) &&
+            item.number > 0 &&
+            item.base?.ref === 'release' &&
+            item.base?.repo?.full_name === repository &&
+            item.head?.repo?.full_name === repository &&
+            item.head?.ref === releaseBranch,
+        )
+        .map((item) => item.number),
+    ),
+  ];
+  const matched: MergedPullRequest[] = [];
+  for (const number of candidateNumbers) {
+    const pr = await api.pullRequest(number);
+    try {
+      validatePullRequest(pr, repository);
+    } catch {
+      continue;
+    }
+    if (pr.merge_commit_sha === sha) matched.push(pr);
   }
-  const sha = pr.merge_commit_sha;
+  if (matched.length === 0) {
+    throw new Error('Expected a merged same-repository Release PR matching this release commit');
+  }
+  if (matched.length > 1) {
+    throw new Error('Ambiguous merged Release PRs for this release commit');
+  }
+  const pr = matched[0]!;
   const [pkg, manifest] = await Promise.all([
     api.file('package.json', sha),
     api.file('.release-please-manifest.json', sha),
@@ -283,6 +329,7 @@ export function fixedReleaseApi(
         throw new Error('Invalid release branch head');
       return ref.object.sha;
     },
+    commitPullRequests: (sha) => required(`commits/${sha}/pulls`),
     pullRequest: (number) => required(`pulls/${number}`),
     async file(path, sha) {
       const file = await required<{ encoding: string; content: string }>(
@@ -350,7 +397,7 @@ async function main(): Promise<void> {
   const api = fixedReleaseApi(repository, token);
   const event = JSON.parse(await readFile(eventPath, 'utf8'));
   const content = process.env.GITHUB_EVENT_NAME === 'workflow_dispatch';
-  if (!content && process.env.GITHUB_EVENT_NAME !== 'pull_request')
+  if (!content && process.env.GITHUB_EVENT_NAME !== 'push')
     throw new Error('Unsupported candidate event');
   if (content && mode === 'publish') throw new Error('Content candidates cannot publish software');
   if (mode === 'latest' && !/^[a-f0-9]{40}$/.test(process.env.EXPECTED_TAG_SHA ?? ''))
@@ -360,7 +407,7 @@ async function main(): Promise<void> {
         requireHead: mode !== 'latest',
         expectedTagSha: mode === 'latest' ? process.env.EXPECTED_TAG_SHA : undefined,
       })
-    : await fixedCandidate(api, repository, event);
+    : await fixedCandidate(api, repository, event, process.env.GITHUB_REF, process.env.GITHUB_SHA);
   const head = execFileSync(
     'git',
     ['-c', `safe.directory=${realpathSync(process.cwd())}`, 'rev-parse', 'HEAD'],

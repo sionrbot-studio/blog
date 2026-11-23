@@ -108,9 +108,9 @@ describe('explicit release run snapshot', () => {
     expect(snapshot.workers).toBeNull();
   });
 
-  it('accepts fixed software identity without treating the event head as its merge SHA', () => {
+  it('accepts fixed software identity on push to release', () => {
     const snapshot = releaseRunSnapshot(
-      { ...contentRun, event: 'pull_request', display_title: `software ${candidateSha}` },
+      { ...contentRun, event: 'push', display_title: `software ${candidateSha}` },
       [],
     );
     expect(snapshot.candidate.kind).toBe('software');
@@ -123,6 +123,7 @@ describe('explicit release run snapshot', () => {
     { display_title: `software ${candidateSha}` },
     { head_branch: 'main' },
     { event: 'push' },
+    { event: 'pull_request', display_title: `software ${candidateSha}` },
     { run_attempt: 0 },
   ])('rejects an unrecognized or mismatched run identity %j', (change) => {
     expect(() => releaseRunSnapshot({ ...contentRun, ...change }, [])).toThrow();

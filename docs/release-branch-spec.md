@@ -93,14 +93,13 @@ logo、字体和默认 OG 图片不属于内容专用资源。`src/config.ts`、
 
 ## 统一入口与候选记录
 
-[release.yml](../.github/workflows/release.yml) 提供两种入口：
+[release.yml](../.github/workflows/release.yml) 提供两种入口，执行 ref 均为受保护分支 `refs/heads/release`：
 
-- `pull_request: closed`：仅接受合入 `release` 的同仓库、合法来源版本 PR，使用原事件 merge SHA。
+- `push`（`branches: [release]`）：仅在 `head_commit.message` 匹配版本提交并经 `scripts/release-fixed.ts` 反查到唯一匹配的同仓库已合并版本 PR（`merge_commit_sha == github.sha`）时放行；普通晋级、直通内容或热修推送直接跳过全部任务。
 - `workflow_dispatch`：仅用于内容部署，唯一必要人工输入为完整候选 `sha`；正式执行 ref 必须为 `refs/heads/release`。
 
-普通晋级 PR 的合并不自动部署。不得将手动入口变为任意 SHA 的软件发版工具。
-workflow 执行 ref 与源码 SHA 分别校验；默认分支保留手动入口定义，并验证 UI/CLI 触发行为。
-生产环境限制与凭据访问须配合正式入口配置，不能只依赖候选字符串检查。
+普通晋级和直通内容 PR 的合并不自动部署。不得将手动入口变为任意 SHA 的软件发版工具。
+workflow 执行 ref 与源码 SHA 分别校验；所有生产与发布环境（`cloudflare-workers`、`release-automation` 及过渡期的 `github-pages`）的部署分支规则均收紧为**仅允许 `release`**，不再放行 `refs/pull/*/merge`。
 
 两种入口使用以下候选 outputs；运行摘要另外记录 Actions 提供的执行身份：
 
