@@ -65,9 +65,10 @@ GitHub Release and deploys each target with its own GET smoke check. Content-onl
 deployment uses an explicit dispatch for the full current `release` SHA and retains
 the existing software version. Ordinary feature and promotion merges do not deploy.
 
-PR CI uses one `verify` job, with a formatting-only path for development-document
-changes and full verification for other changes. Release preparation always runs
-full verification.
+PR CI runs parallel verification jobs gated by `verify`, narrowing scope for changes
+confined to development documents, unit tests, build contracts, or a single
+deterministic browser variant, and running full verification for all other changes and
+`main` merge groups. Release preparation always runs full verification.
 See [docs/releasing.md](docs/releasing.md) for setup, commit conventions, and retries.
 
 ## Test

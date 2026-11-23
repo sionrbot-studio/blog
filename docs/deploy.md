@@ -158,16 +158,7 @@ Build command: `./node_modules/.bin/vp run build`. Publish directory: `dist`.
 
 ## CI and deployment verification
 
-[CI](../.github/workflows/ci.yml) runs one `verify` job on pull requests and manual
-dispatch. For a PR whose complete diff changes only `README.md`, `AGENTS.md`,
-`GLOSSARY.md`, `THIRD-PARTY-NOTICES.md`, or Markdown files under `docs/`,
-[scripts/ci-scope.ts](../scripts/ci-scope.ts) selects formatting-only verification.
-All other changes, manual dispatches, and uncertain scope detection run full
-verification with a fixed root-hosted test URL. It installs dependencies once, runs
-source/translation/unit/timezone checks, builds the baseline, checks build
-contracts and internal links, and runs the four deterministic browser suites on
-`desktop,narrow,webkit` plus the `production-path` desktop journey. The baseline
-stays in the same job's workspace. Diagnostics are uploaded for inspection.
+[CI](../.github/workflows/ci.yml) runs parallel verification jobs gated by a required `verify` job on pull requests, `main` merge groups, and manual dispatch. [scripts/ci-scope.ts](../scripts/ci-scope.ts) selects a reduced scope only when a PR's complete diff is confined to development documents (`README.md`, `AGENTS.md`, `GLOSSARY.md`, `THIRD-PARTY-NOTICES.md`, or `docs/**/*.md`), unit tests, build contract tests, or a single deterministic browser variant, after independently verifying the Git merge tree against exclusions. All other PR changes, merge groups, manual dispatches, and uncertain scope detections run full verification with a fixed root-hosted test URL across formatting, lint, types, unit/timezone checks, baseline build and internal links, sharded build contracts, and parallel deterministic browser shards (`desktop`, `narrow`, `webkit`, plus the `production-path` desktop journey). Diagnostics are uploaded for inspection.
 
 Lighthouse and rendering AI checks are on-demand tools; see
 [Testing](../tests/TESTING.md). PR validation, release preparation, publication,
