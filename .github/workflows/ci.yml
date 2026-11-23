@@ -119,7 +119,10 @@ jobs:
 
   unit:
     needs: scope
-    if: needs.scope.outputs.scope == 'unit' || needs.scope.outputs.scope == 'full'
+    if: >-
+      needs.scope.outputs.scope == 'unit' ||
+      needs.scope.outputs.scope == 'release-meta' ||
+      needs.scope.outputs.scope == 'full'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -390,7 +393,7 @@ jobs:
             'production-path': ['desktop'],
           };
           const browserScope = Object.hasOwn(browserTargets, scope);
-          if (!['docs', 'unit', 'contracts', 'full'].includes(scope) && !browserScope) {
+          if (!['docs', 'unit', 'release-meta', 'contracts', 'full'].includes(scope) && !browserScope) {
             throw new Error('Unknown verification scope: ' + scope);
           }
           if (process.env.GITHUB_EVENT_NAME !== 'pull_request' && scope !== 'full') {
@@ -414,7 +417,7 @@ jobs:
           const selected = ['scope', 'format'];
           if (needsBranchGate) selected.push('branch_gate');
           if (scope !== 'docs') selected.push('lint', 'types');
-          if (scope === 'unit') selected.push('unit');
+          if (scope === 'unit' || scope === 'release-meta') selected.push('unit');
           if (scope === 'contracts') selected.push('contracts');
           if (browserScope) selected.push('browser');
           for (const name of ['scope', 'branch_gate', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {

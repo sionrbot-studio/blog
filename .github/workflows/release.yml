@@ -21,19 +21,20 @@ concurrency:
   queue: max
   cancel-in-progress: false
 
+env:
+  SITE_URL: https://sionrbot.github.io
+  CF_SEND_TELEMETRY: 'false'
+
 jobs:
-  prepare:
+  admit:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'release' &&
       github.event.pull_request.head.ref == 'release-please--branches--release--components--sionrbot-blog' &&
       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    container:
-      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
-      options: --ipc=host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       kind: ${{ steps.candidate.outputs.kind }}
       sha: ${{ steps.candidate.outputs.sha }}
@@ -41,12 +42,7 @@ jobs:
       tag: ${{ steps.candidate.outputs.tag }}
       tag-sha: ${{ steps.candidate.outputs.tag-sha }}
       pr: ${{ steps.candidate.outputs.pr }}
-      publish: ${{ steps.publish.outcome }}
       attempt: ${{ steps.prepared.outputs.attempt }}
-      workers-artifact: ${{ steps.workers_upload.outputs.artifact-id }}
-    env:
-      SITE_URL: https://sionrbot.github.io
-      CF_SEND_TELEMETRY: 'false'
     steps:
       - id: admission
         name: Validate content execution ref and fixed input before checkout
@@ -75,18 +71,29 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - id: setup_vp
-        uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
-        with:
-          cache: true
-          run-install: false
-      - id: dependencies
-        run: vp install --frozen-lockfile
       - id: candidate
         name: Fix and validate the software or content candidate
         run: node scripts/release-fixed.ts candidate
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - id: prepared
+        run: echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+  verify_checks:
+    needs: admit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - id: checks_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.admit.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: checks_dependencies
+        uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
       - id: checks
         name: Check source, translations, logic and timezones
         run: |
@@ -94,8 +101,75 @@ jobs:
           vp check
           vp run lint:astro
           vp run i18n:check
-          vp run test:unit
-          vp run test:unit:tz
+          vp run --no-cache test:unit
+          vp run --no-cache test:unit:tz
+
+  verify_build:
+    needs: admit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - id: build_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.admit.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: build_dependencies
+        uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
+      - id: baseline_build
+        name: Build root-path test site
+        run: vp run build
+      - id: build_tests
+        name: Verify built contracts and internal links
+        run: |
+          vp run --no-cache test:build
+          vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
+      - id: build_diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tests/test-results/build/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  verify_browser:
+    needs: admit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    container:
+      image: &playwright_image mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: default
+            target: desktop,narrow,webkit
+          - variant: i18n
+            target: desktop,narrow,webkit
+          - variant: configured-forms
+            target: desktop,narrow,webkit
+          - variant: rendering
+            target: desktop,narrow,webkit
+          - variant: production-path
+            target: desktop
+    steps:
+      - id: browser_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.admit.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: browser_dependencies
+        uses: ./.github/actions/dependencies
+        with:
+          environment: *playwright_image
       - id: browsers
         name: Verify preinstalled browser versions
         run: |
@@ -109,29 +183,46 @@ jobs:
           const { chromium, webkit } = webRequire('playwright-core');
           for (const browser of [chromium, webkit]) accessSync(browser.executablePath(), constants.X_OK);
           NODE
-      - id: baseline_build
-        name: Build root-path test site
-        run: vp run build
-      - id: build_tests
-        name: Verify built contracts and internal links
+      - id: browser_suite
+        name: Run browser regression suite
+        env:
+          VARIANT: ${{ matrix.variant }}
+          TARGET: ${{ matrix.target }}
         run: |
-          vp run test:build
-          vp dlx linkinator@8.1.0 dist --recurse --skip '^https?://(?!(localhost|127\.0\.0\.1|\[::1\])[:/])'
-      - id: default_browser
-        run: vp run test:e2e --variant default --target desktop,narrow,webkit
-      - id: i18n_browser
-        run: vp run test:e2e --variant i18n --target desktop,narrow,webkit
-      - id: forms_browser
-        run: vp run test:e2e --variant configured-forms --target desktop,narrow,webkit
-      - id: rendering_browser
-        run: vp run test:e2e --variant rendering --target desktop,narrow,webkit
-      - id: production_path_browser
-        run: vp run test:e2e --variant production-path --target desktop
+          if [[ "$VARIANT" == default ]]; then vp run build; fi
+          vp run --no-cache test:e2e --variant "$VARIANT" --target "$TARGET"
+      - id: browser_diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-browser-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tests/test-results/build/
+            .e2e/runs/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  build_pages:
+    needs: admit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - id: pages_build_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.admit.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: pages_build_dependencies
+        uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
       - id: pages_build
         name: Build and check independent Pages output
         env:
           SITE_URL: https://sionrbot.github.io/blog/
-          SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
+          SOURCE_SHA: ${{ needs.admit.outputs.sha }}
         run: |
           vp run build
           vp test --project build tests/build/base-path.test.ts tests/build/routes.test.ts tests/build/seo.test.ts
@@ -141,6 +232,30 @@ jobs:
           test -s dist/articles/freedom/index.html
           cp -R dist release-output/pages
           printf '%s %s %s\n' "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > release-output/pages/release-id.txt
+      - id: pages_upload
+        name: Preserve this run's Pages output
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-output/pages
+
+  build_workers:
+    needs: admit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      workers-artifact: ${{ steps.workers_upload.outputs.artifact-id }}
+    steps:
+      - id: workers_build_checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.admit.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: workers_build_dependencies
+        uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
       - id: workers_build
         name: Build and check Workers prebuilt output
         env:
@@ -162,46 +277,43 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
-      - id: pages_upload
-        name: Preserve this run's Pages output
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+
+  prepare:
+    needs: [admit, verify_checks, verify_build, verify_browser, build_pages, build_workers]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      kind: ${{ needs.admit.outputs.kind }}
+      sha: ${{ needs.admit.outputs.sha }}
+      version: ${{ needs.admit.outputs.version }}
+      tag: ${{ needs.admit.outputs.tag }}
+      tag-sha: ${{ needs.admit.outputs.tag-sha }}
+      pr: ${{ needs.admit.outputs.pr }}
+      publish: ${{ steps.publish.outcome }}
+      attempt: ${{ needs.admit.outputs.attempt }}
+      workers-artifact: ${{ needs.build_workers.outputs.workers-artifact }}
+    steps:
+      - id: prepare_attempt
+        name: Require all verification and build outputs from this attempt
+        env:
+          PREPARED_ATTEMPT: ${{ needs.admit.outputs.attempt }}
+        run: |
+          if [ "$PREPARED_ATTEMPT" != "$GITHUB_RUN_ATTEMPT" ]; then
+            echo '::error::Re-run all jobs to validate and rebuild this fixed candidate before publication or deployment.'
+            exit 1
+          fi
+      - id: publish_checkout
+        if: ${{ needs.admit.outputs.kind == 'software' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
-          path: release-output/pages
-      - id: prepared
-        run: echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          ref: ${{ needs.admit.outputs.sha }}
+          persist-credentials: false
       - id: publish
-        if: ${{ steps.candidate.outputs.kind == 'software' }}
+        if: ${{ needs.admit.outputs.kind == 'software' }}
         name: Publish or confirm the validated fixed version
         run: node scripts/release-fixed.ts publish
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-      - id: diagnostics
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: release-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            tests/test-results/build/
-            .e2e/runs/
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 7
-
-      - id: preparation_summary
-        if: ${{ always() }}
-        name: Record validation, builds and software publication outcomes
-        env:
-          STEP_RESULTS: ${{ toJSON(steps) }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { appendFileSync } from 'node:fs';
-          const steps = JSON.parse(process.env.STEP_RESULTS);
-          const ids = ['admission', 'candidate', 'checks', 'browsers', 'baseline_build', 'build_tests', 'default_browser', 'i18n_browser', 'forms_browser', 'rendering_browser', 'production_path_browser', 'pages_build', 'workers_build', 'pages_upload', 'workers_upload', 'publish'];
-          const kind = steps.candidate?.outputs?.kind;
-          const rows = ids.map(id => `| ${id} | ${id === 'publish' && kind === 'content' ? 'not applicable (content)' : steps[id]?.outcome ?? 'not run'} |`);
-          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Preparation\n\n| Step | Outcome |\n| --- | --- |\n${rows.join('\n')}\n`);
-          NODE
 
   # Independent jobs preserve each platform's failure and still attempt the other.
   # Only this job receives Pages write/OIDC permissions; validation does not.
@@ -211,7 +323,7 @@ jobs:
       gate: ${{ steps.pages_latest.outputs.deploy }}
       deploy: ${{ steps.pages_deploy.outcome }}
       smoke: ${{ steps.pages_smoke.outcome }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -262,7 +374,7 @@ jobs:
   mirror:
     needs: [prepare, pages]
     if: ${{ needs.pages.outputs.deploy == 'success' && needs.pages.outputs.smoke == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
       name: github-pages
@@ -343,10 +455,8 @@ jobs:
       gate: ${{ steps.workers_latest.outputs.deploy }}
       deploy: ${{ steps.workers_deploy.outcome }}
       smoke: ${{ steps.workers_smoke.outcome }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      CF_SEND_TELEMETRY: 'false'
     steps:
       - id: workers_attempt
         name: Require validation and outputs from this attempt
@@ -362,13 +472,10 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
-      - id: setup_vp
-        uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
-        with:
-          cache: true
-          run-install: false
       - id: workers_dependencies
-        run: vp install --frozen-lockfile
+        uses: ./.github/actions/dependencies
+        with:
+          environment: ubuntu-24.04
       - id: workers_download
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -393,7 +500,7 @@ jobs:
   refresh:
     if: ${{ needs.prepare.outputs.kind == 'software' }}
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
       group: release-pr-release
@@ -403,12 +510,9 @@ jobs:
         with:
           ref: release
           persist-credentials: false
-      - id: setup_vp
-        uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+      - uses: ./.github/actions/dependencies
         with:
-          cache: true
-          run-install: false
-      - run: vp install --frozen-lockfile
+          environment: ubuntu-24.04
       - name: Refresh the next version PR after clearing pending
         run: node scripts/release.ts pr
         env:
@@ -416,8 +520,21 @@ jobs:
 
   summary:
     if: ${{ always() }}
-    needs: [prepare, pages, mirror, workers, refresh]
-    runs-on: ubuntu-latest
+    needs:
+      [
+        admit,
+        verify_checks,
+        verify_build,
+        verify_browser,
+        build_pages,
+        build_workers,
+        prepare,
+        pages,
+        mirror,
+        workers,
+        refresh,
+      ]
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - id: delivery_summary
@@ -430,7 +547,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { appendFileSync } from 'node:fs';
           const jobs = JSON.parse(process.env.JOB_RESULTS);
-          const candidate = jobs.prepare.outputs;
+          const candidate = jobs.admit?.outputs ?? {};
           const sha = /^[a-f0-9]{40}$/.test(process.env.CANDIDATE_SHA ?? '') ? process.env.CANDIDATE_SHA : 'invalid input';
           const rows = ['pages', 'workers'].map(target => {
             const job = jobs[target];
@@ -438,7 +555,10 @@ jobs:
             const gate = output.gate === 'false' ? 'superseded; deployment skipped' : output.gate === 'true' ? 'eligible' : 'not established';
             return `| ${target} | ${job.result} | ${gate} | ${output.deploy || 'not run'} | ${output.smoke || 'not run'} |`;
           });
-          const publication = process.env.CANDIDATE_KIND === 'content' ? 'not applicable (content)' : candidate.publish || 'not run';
+          const prepJobs = ['admit', 'verify_checks', 'verify_build', 'verify_browser', 'build_pages', 'build_workers', 'prepare'].map(
+            name => `| ${name} | ${jobs[name]?.result ?? 'not run'} |`,
+          );
+          const publication = process.env.CANDIDATE_KIND === 'content' ? 'not applicable (content)' : jobs.prepare?.outputs?.publish || 'not run';
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
             '## Fixed candidate', '',
             `- Kind: ${process.env.CANDIDATE_KIND}`,
@@ -448,10 +568,13 @@ jobs:
             `- Software tag SHA: ${candidate['tag-sha'] || 'not established'}`,
             `- Version PR: ${candidate.pr || 'not applicable / not established'}`,
             `- Run / attempt: ${process.env.GITHUB_RUN_ID} / ${process.env.GITHUB_RUN_ATTEMPT}`,
-            `- Preparation: ${jobs.prepare.result}`,
+            `- Preparation gate: ${jobs.prepare.result}`,
             `- Personal Pages mirror: ${jobs.mirror.result} (eligible: ${jobs.mirror.outputs.gate || 'not established'}, push: ${jobs.mirror.outputs.push || 'not run'}, verification: ${jobs.mirror.outputs.verify || 'not run'}, target commit: ${jobs.mirror.outputs.sha || 'none'})`,
             `- Software publication: ${publication}`,
             `- Version PR refresh: ${jobs.refresh.result}`, '',
+            '## Preparation jobs', '',
+            '| Job | Result |',
+            '| --- | --- |', ...prepJobs, '',
             '| Target | Job | Eligibility | Deployment | Smoke |',
             '| --- | --- | --- | --- | --- |', ...rows, '',
             'Job success alone does not certify deployment: inspect eligibility, deployment and smoke separately.', '',
