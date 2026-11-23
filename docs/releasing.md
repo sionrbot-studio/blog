@@ -16,17 +16,18 @@ version PR does not grant permission to merge it.
 
 ## Configure the release credential
 
-The workflow uses a user access token stored as the repository Actions secret
-`RELEASE_TOKEN`. PRs and Releases are authored by that token's account. It does not
-fall back to the default `GITHUB_TOKEN`.
+The workflow uses a user access token stored as the `RELEASE_TOKEN` secret inside the
+`release-automation` GitHub Environment (restricted to the `release` branch). PRs and
+Releases are authored by that token's account. It does not fall back to the default
+`GITHUB_TOKEN`.
 
 To reuse an existing GitHub CLI login, confirm that `gh` is logged into the intended
 account with repository write and workflow access, then stream its token directly
-to the repository secret:
+to the `release-automation` environment secret:
 
 ```sh
 gh auth status
-gh auth token | gh secret set RELEASE_TOKEN --repo sionrbot/blog
+gh auth token | gh secret set RELEASE_TOKEN --env release-automation --repo sionrbot/blog
 ```
 
 Do not paste the token into chat, commit it, or print it in workflow logs. This
@@ -155,13 +156,7 @@ this workflow does not maintain an independent old-version hotfix line.
 
 ## Fixed candidate and validation
 
-The [release workflow](../.github/workflows/release.yml) accepts a closed, merged, same-repository version PR into
-`release`, from `release-please--branches--release--components--sionrbot-blog`. It checks
-out the event's complete merge SHA. `scripts/release-fixed.ts candidate` reads the
-version files at that SHA, requires matching stable versions, checks the live PR
-identity and existing tag, and verifies that the checkout matches. Rerunning the
-original workflow retains that event and source; moving `release` is never a build
-input. An unpublished candidate requires its `autorelease: pending` label.
+The [release workflow](../.github/workflows/release.yml) runs on `push` to `release` (pre-filtered to `chore(release): release ` commits) and checks out the event's complete `github.sha`. `scripts/release-fixed.ts candidate` resolves the unique merged, same-repository version PR associated with that exact commit (`base: release`, `head: release-please--branches--release--components--sionrbot-blog`, `merge_commit_sha === github.sha`), reads the version files at that SHA, requires matching stable versions, checks the live PR identity and existing tag, and verifies that the checkout matches. Rerunning the original workflow retains that push SHA; moving `release` is never a build input. Non-release pushes to `release` (such as promotions or direct `content/*` merges) skip all jobs without deploying. An unpublished candidate requires its `autorelease: pending` label.
 
 Source, translation, unit, timezone, build, internal-link and deterministic
 browser checks run before publication. Pages and Workers are then built for their

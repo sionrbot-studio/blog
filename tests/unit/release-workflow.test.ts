@@ -67,7 +67,7 @@ function execute(failingStep?: string, supersededGates: readonly string[] = [], 
         runInNewContext(stepCondition, {
           steps: results,
           needs: jobResults,
-          github: { event_name: kind === 'content' ? 'workflow_dispatch' : 'pull_request' },
+          github: { event_name: kind === 'content' ? 'workflow_dispatch' : 'push' },
           always: () => true,
           cancelled: () => false,
           failure: () => failed,
@@ -504,18 +504,38 @@ describe('fixed-source release wiring', () => {
     expect(template).toContain('not applicable (content)');
   });
 
-  test('preserves the bounded native queue independently from PR maintenance', () => {
+  test('preserves the bounded native queue, push release trigger, and release-only environments', () => {
     expect(template).toContain(
       'group: release-production\n  queue: max\n  cancel-in-progress: false',
     );
     expect(maintenance).toContain('group: release-pr-release');
     expect(maintenance).toContain('node scripts/release.ts pr');
-    expect(template).toContain('workflow_dispatch:');
+    expect(maintenance).toContain(
+      'environment:\n      name: release-automation\n      deployment: false',
+    );
+    expect(template).toContain('on:\n  push:\n    branches: [release]\n  workflow_dispatch:');
+    expect(template).not.toMatch(/^  pull_request:/m);
+    expect(template).toContain("if: ${{ always() && needs.admit.result != 'skipped' }}");
+    expect(jobs.find((job) => job.id === 'prepare')!.body).toContain(
+      'environment:\n      name: release-automation\n      deployment: false',
+    );
+    expect(jobs.find((job) => job.id === 'refresh')!.body).toContain(
+      'environment:\n      name: release-automation\n      deployment: false',
+    );
+    expect(jobs.find((job) => job.id === 'workers')!.body).toContain(
+      'environment:\n      name: cloudflare-workers',
+    );
+    expect(jobs.find((job) => job.id === 'pages')!.body).toContain(
+      'environment:\n      name: github-pages',
+    );
+    expect(jobs.find((job) => job.id === 'mirror')!.body).toContain(
+      'environment:\n      name: github-pages\n      deployment: false',
+    );
     expect(maintenance).toContain('branches: [release]');
     expect(maintenance).toContain('ref: release');
     expect(template).not.toContain('continue-on-error:');
     expect(template).toContain(
-      "ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.pull_request.merge_commit_sha }}",
+      "ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}",
     );
   });
 });

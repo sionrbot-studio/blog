@@ -1,10 +1,9 @@
 name: Release fixed source
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('content {0}', inputs.sha) || format('software {0}', github.event.pull_request.merge_commit_sha) }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('content {0}', inputs.sha) || format('software {0}', github.sha) }}
 
 on:
-  pull_request:
+  push:
     branches: [release]
-    types: [closed]
   workflow_dispatch:
     inputs:
       sha:
@@ -14,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 # Covers validation, publication and both deployments. Maintenance has its own group.
 concurrency:
@@ -29,10 +29,9 @@ jobs:
   admit:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'release' &&
-      github.event.pull_request.head.ref == 'release-please--branches--release--components--sionrbot-blog' &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      (github.event_name == 'push' &&
+      github.ref == 'refs/heads/release' &&
+      startsWith(github.event.head_commit.message, 'chore(release): release '))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -68,7 +67,7 @@ jobs:
       - id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - id: candidate
@@ -282,6 +281,9 @@ jobs:
     needs: [admit, verify_checks, verify_build, verify_browser, build_pages, build_workers]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment:
+      name: release-automation
+      deployment: false
     outputs:
       kind: ${{ needs.admit.outputs.kind }}
       sha: ${{ needs.admit.outputs.sha }}
@@ -327,6 +329,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      pull-requests: read
       pages: write
       id-token: write
     environment:
@@ -457,6 +460,9 @@ jobs:
       smoke: ${{ steps.workers_smoke.outcome }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment:
+      name: cloudflare-workers
+      url: https://sionrbot-blog.pgsnotfound404.workers.dev/
     steps:
       - id: workers_attempt
         name: Require validation and outputs from this attempt
@@ -502,6 +508,9 @@ jobs:
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment:
+      name: release-automation
+      deployment: false
     concurrency:
       group: release-pr-release
       cancel-in-progress: false
@@ -519,7 +528,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
   summary:
-    if: ${{ always() }}
+    if: ${{ always() && needs.admit.result != 'skipped' }}
     needs:
       [
         admit,
@@ -541,7 +550,7 @@ jobs:
         name: Record candidate and independent target results
         env:
           JOB_RESULTS: ${{ toJSON(needs) }}
-          CANDIDATE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.pull_request.merge_commit_sha }}
+          CANDIDATE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.sha }}
           CANDIDATE_KIND: ${{ github.event_name == 'workflow_dispatch' && 'content' || 'software' }}
         run: |
           node --input-type=module <<'NODE'
