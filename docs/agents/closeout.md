@@ -84,13 +84,17 @@ node scripts/check-closeout.ts --run RUN_ID --base release
 
 Replace the examples with the delivered PR or workflow run ID. Optional `--remote` and
 `--base` arguments select a remote and target branch; defaults are `origin` and
-`main`. Git, an authenticated GitHub CLI, and remote read access are required.
+`main`. Optional `--expect-ancestor <40-char SHA>` additionally verifies that a
+specific release commit (such as a published tag commit during a back-merge) is an
+ancestor of the synchronized base branch. Git, an authenticated GitHub CLI, and
+remote read access are required.
 
-The script emits JSON containing repository state, live remote state, PR metadata,
-and separate workflow snapshots for the PR head, merge commit, and current remote
-base. The run form reports the selected candidate separately from the workflow execution
-SHA, and includes current-attempt target jobs and steps. `--pr` and `--run` are
-mutually exclusive.
+The script emits JSON containing repository state, local `main`/`release` divergence
+when both branches exist, live remote state, PR metadata, and separate workflow
+snapshots for the PR head, merge commit, and current remote base. The run form reports
+the selected candidate separately from the workflow execution SHA, and includes
+current-attempt target jobs (`prepare`, `pages`, `mirror`, `workers`) and steps.
+`--pr` and `--run` are mutually exclusive.
 Use the software version PR number with `--base release` for software delivery.
 It does not fetch, change branches, edit files,
 delete refs, merge PRs, or publish releases. Exit codes describe the snapshot:

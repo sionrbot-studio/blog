@@ -22,6 +22,7 @@ export function repositoryReady(snapshot: {
   remoteAfter: string;
   pr: PullRequest;
   mergeOnBase: boolean;
+  expectedAncestorOnBase?: boolean | null;
 }): boolean {
   return (
     snapshot.clean &&
@@ -31,7 +32,8 @@ export function repositoryReady(snapshot: {
     snapshot.remoteBefore === snapshot.remoteAfter &&
     snapshot.pr.state === 'MERGED' &&
     snapshot.pr.baseRefName === snapshot.base &&
-    snapshot.mergeOnBase
+    snapshot.mergeOnBase &&
+    snapshot.expectedAncestorOnBase !== false
   );
 }
 
@@ -82,9 +84,43 @@ export function releaseRunSnapshot(run: ReleaseRun, jobs: ReleaseJob[]) {
     executionSha: run.head_sha,
     preparation: job('prepare'),
     pages: job('pages'),
+    mirror: job('mirror'),
     workers: job('workers'),
     jobs,
   };
+}
+
+export interface BranchDivergence {
+  mainAheadOfRelease: number;
+  releaseAheadOfMain: number;
+}
+
+export function readBranchDivergence(cwd?: string): BranchDivergence | null {
+  const exec = (args: string[]) =>
+    execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30_000,
+    }).trim();
+  for (const ref of ['refs/heads/main', 'refs/heads/release']) {
+    try {
+      exec(['rev-parse', '--verify', '--quiet', ref]);
+    } catch {
+      return null;
+    }
+  }
+  const [ahead, behind] = exec([
+    'rev-list',
+    '--left-right',
+    '--count',
+    'refs/heads/main...refs/heads/release',
+  ])
+    .split(/\s+/)
+    .map((value) => Number.parseInt(value, 10));
+  if (!Number.isSafeInteger(ahead) || !Number.isSafeInteger(behind)) return null;
+  return { mainAheadOfRelease: ahead!, releaseAheadOfMain: behind! };
 }
 
 function run(command: string, args: string[]): string {
@@ -103,6 +139,7 @@ function main(): void {
       run: { type: 'string' },
       remote: { type: 'string', default: 'origin' },
       base: { type: 'string', default: 'main' },
+      'expect-ancestor': { type: 'string' },
     },
   });
   if (
@@ -110,8 +147,12 @@ function main(): void {
     !/^[1-9]\d*$/.test(values.pr ?? values.run ?? '')
   ) {
     throw new Error(
-      'Usage: node scripts/check-closeout.ts <--pr NUMBER | --run ID> [--remote origin] [--base main]',
+      'Usage: node scripts/check-closeout.ts <--pr NUMBER | --run ID> [--remote origin] [--base main] [--expect-ancestor SHA]',
     );
+  }
+  const expectedAncestor = values['expect-ancestor'];
+  if (expectedAncestor !== undefined && !/^[a-f0-9]{40}$/.test(expectedAncestor)) {
+    throw new Error('--expect-ancestor requires a complete 40-character commit SHA');
   }
   const remote = values.remote;
   const base = values.base;
@@ -221,6 +262,17 @@ function main(): void {
       if ((error as { status?: number }).status !== 1) throw error;
     }
   }
+  let expectedAncestorOnBase: boolean | null = null;
+  if (expectedAncestor !== undefined) {
+    try {
+      run('git', ['merge-base', '--is-ancestor', expectedAncestor, localBase]);
+      expectedAncestorOnBase = true;
+    } catch (error) {
+      if ((error as { status?: number }).status !== 1) throw error;
+      expectedAncestorOnBase = false;
+    }
+  }
+  const branchDivergence = readBranchDivergence();
   const localBaseAfter = run('git', ['rev-parse', '--verify', `refs/heads/${base}`]);
   const branchAfter = run('git', ['branch', '--show-current']);
   const changesAfter = run('git', ['status', '--porcelain=v1', '--untracked-files=all']);
@@ -244,6 +296,9 @@ function main(): void {
     remoteAfter,
     pr,
     mergeOnBase,
+    expectedAncestor: expectedAncestor ?? null,
+    expectedAncestorOnBase,
+    branchDivergence,
     branches,
     remoteBranches,
     workflowRuns,
@@ -259,7 +314,8 @@ function main(): void {
       branch === base &&
       localBase === remoteBefore &&
       remoteBefore === remoteAfter &&
-      candidateOnBase;
+      candidateOnBase &&
+      expectedAncestorOnBase !== false;
   console.log(
     JSON.stringify(
       {
