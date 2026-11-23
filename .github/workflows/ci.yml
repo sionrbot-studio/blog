@@ -50,6 +50,27 @@ jobs:
           profile=$(python3 scripts/ci-playwright-images.py)
           echo "profile=$profile" >> "$GITHUB_OUTPUT"
 
+  branch_gate:
+    needs: scope
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.base_ref == 'release' ||
+      (github.base_ref == 'main' &&
+      (github.head_ref == 'release' || startsWith(github.head_ref, 'back-merge/'))))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Validate release branch or back-merge policy
+        run: node scripts/release-gate.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
   format:
     needs: scope
     runs-on: ubuntu-24.04
@@ -349,12 +370,14 @@ jobs:
 
   verify:
     if: always()
-    needs: [scope, format, lint, types, unit, build, contracts, browser]
+    needs: [scope, branch_gate, format, lint, types, unit, build, contracts, browser]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every selected job to succeed
         env:
           NEEDS: ${{ toJSON(needs) }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           node --input-type=module <<'NODE'
           const jobs = JSON.parse(process.env.NEEDS);
@@ -382,15 +405,29 @@ jobs:
                 plannedBrowsers.some(row => row.variant === variant && row.target === target))) {
             throw new Error('Browser matrix does not cover the selected scope: ' + scope);
           }
+          const needsBranchGate =
+            process.env.GITHUB_EVENT_NAME === 'pull_request' &&
+            (process.env.BASE_REF === 'release' ||
+              (process.env.BASE_REF === 'main' &&
+                (process.env.HEAD_REF === 'release' ||
+                  (process.env.HEAD_REF ?? '').startsWith('back-merge/'))));
           const selected = ['scope', 'format'];
+          if (needsBranchGate) selected.push('branch_gate');
           if (scope !== 'docs') selected.push('lint', 'types');
           if (scope === 'unit') selected.push('unit');
           if (scope === 'contracts') selected.push('contracts');
           if (browserScope) selected.push('browser');
-          for (const name of ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {
+          for (const name of ['scope', 'branch_gate', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser']) {
             const job = jobs[name];
             if (!job) throw new Error('Missing required job: ' + name);
-            const expected = scope === 'full' || selected.includes(name) ? 'success' : 'skipped';
+            const expected =
+              name === 'branch_gate'
+                ? needsBranchGate
+                  ? 'success'
+                  : 'skipped'
+                : scope === 'full' || selected.includes(name)
+                  ? 'success'
+                  : 'skipped';
             if (job.result !== expected) throw new Error(name + ' returned ' + job.result + ', expected ' + expected);
           }
           NODE

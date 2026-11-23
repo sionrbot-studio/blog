@@ -31,7 +31,7 @@ jobs:
                   repository(owner: $owner, name: $repo) {
                     mergeQueue(branch: "main") {
                       entries(first: 100, after: $after) {
-                        nodes { headCommit { oid } pullRequest { number title } }
+                        nodes { headCommit { oid } pullRequest { number title headRefName } }
                         pageInfo { hasNextPage endCursor }
                       }
                     }
@@ -55,13 +55,42 @@ jobs:
                 throw new Error(`Expected one queued PR for ${group.head_sha}; found ${matches.length}.`);
               }
               core.info(`Checking title of PR #${matches[0].number} for queue SHA ${group.head_sha}.`);
-              return matches[0].title;
+              return matches[0];
             }
 
-            const title = context.eventName === 'merge_group'
-              ? await queuedPullRequestTitle()
-              : context.payload.pull_request.title;
-            const pattern = /^(feat|fix|perf|revert|content|docs|chore|test|ci|build|refactor|style)(\([^()\r\n]+\))?!?: \S[^\r\n]*$/u;
-            if (!pattern.test(title)) {
+            const versionBranch = 'release-please--branches--release--components--sionrbot-blog';
+            const conventional = /^(feat|fix|perf|revert|content|docs|chore|test|ci|build|refactor|style)(\([^()\r\n]+\))?!?: \S[^\r\n]*$/u;
+            const isBackMergeTitle = (title) => /^chore(\(release\))?: back-merge\b/iu.test(title);
+            const isBackMergeRef = (ref) => ref === 'release' || (ref ?? '').startsWith('back-merge/');
+
+            if (context.eventName === 'merge_group') {
+              const queued = await queuedPullRequestTitle();
+              if (isBackMergeRef(queued.headRefName) || isBackMergeTitle(queued.title)) {
+                core.setFailed('Back-merge PRs from release must not enter the squash merge queue; merge with a merge commit to preserve release ancestry.');
+                return;
+              }
+              if (!conventional.test(queued.title)) {
+                core.setFailed('Use a Conventional Commit title, e.g. feat: add search, fix: correct dates, or content: publish an article. See docs/releasing.md.');
+              }
+              return;
+            }
+
+            const pr = context.payload.pull_request;
+            const title = pr.title;
+            const baseRef = pr.base?.ref ?? '';
+            const headRef = pr.head?.ref ?? '';
+            if (!conventional.test(title)) {
               core.setFailed('Use a Conventional Commit title, e.g. feat: add search, fix: correct dates, or content: publish an article. See docs/releasing.md.');
+              return;
+            }
+            if (baseRef === 'release') {
+              if (headRef.startsWith('promote/') && !/^chore\(release\): promote \S/u.test(title)) {
+                core.setFailed('Promotion PRs into release must use title format "chore(release): promote <summary>".');
+              } else if (headRef.startsWith('content/') && !/^content(\([^()\r\n]+\))?: \S/u.test(title)) {
+                core.setFailed('Direct content/* PRs into release must use a non-breaking "content: <summary>" title.');
+              } else if (headRef === versionBranch && !/^chore\(release\): release \d+\.\d+\.\d+/u.test(title)) {
+                core.setFailed('Version PRs into release must use title format "chore(release): release <version>".');
+              }
+            } else if (baseRef === 'main' && isBackMergeRef(headRef) && !/^chore\(release\): back-merge \S/u.test(title)) {
+              core.setFailed('Back-merge PRs into main must use title format "chore(release): back-merge <summary>".');
             }

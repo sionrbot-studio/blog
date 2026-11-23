@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { GitHub, Manifest } from 'release-please';
 import { Version } from 'release-please/build/src/version.js';
 import { setInitialRelease } from '../../scripts/release';
+import { checkContentHistory } from '../../scripts/release-content';
 import { prepareReleaseManifest } from '../../scripts/release-recovery';
 
 const sha = (n: number) => n.toString().repeat(40);
@@ -340,6 +341,99 @@ it('discovers two promoted batches and a hotfix without repeating back-merged re
     git('merge', '--no-ff', 'release', '-m', 'chore: back-merge second release and repair');
     git('checkout', '-q', 'release');
     expect(await preview()).toBeUndefined();
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+it('supports direct content/* on release alongside unpromoted ci/deps on main, followed by back-merge and software promotion', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'release-content-direct-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const put = (path: string, content: string) => {
+    mkdirSync(dirname(join(cwd, path)), { recursive: true });
+    writeFileSync(join(cwd, path), content);
+  };
+  const commit = (message: string) => {
+    git('add', '-A');
+    git('commit', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
+  try {
+    git('init', '-b', 'main');
+    git('config', 'user.email', 'test@example.invalid');
+    git('config', 'user.name', 'Release test');
+    git('config', 'commit.gpgsign', 'false');
+    put('package.json', '{"version":"1.8.2"}\n');
+    put('.release-please-manifest.json', '{".":"1.8.2"}\n');
+    put('src/config.ts', 'export const site = {};\n');
+    const base = commit('chore(release): release 1.8.2');
+    git('branch', 'release');
+
+    // Engineering-only updates accumulate on main (e.g. weekly Dependabot + CI work).
+    put('src/config.ts', 'export const site = { ci: true };\n');
+    commit('ci: speed up verification');
+    put('package.json', '{"version":"1.8.2","dependencies":{"a":"1.0.1"}}\n');
+    commit('chore(deps): bump a to 1.0.1');
+
+    // Author publishes an article directly via content/* branched from release.
+    git('checkout', '-q', '-b', 'content/direct-essay', 'release');
+    put('src/content/blog/direct-essay.mdx', '---\ntitle: Direct\n---\nBody\n');
+    commit('content: publish direct essay');
+    git('checkout', '-q', 'release');
+    git('merge', '--squash', 'content/direct-essay');
+    const directReleaseHead = commit('content: publish direct essay');
+
+    // Cumulative diff from v1.8.2 to release HEAD is strictly content-eligible.
+    expect(() => checkContentHistory(cwd, base, directReleaseHead)).not.toThrow();
+
+    const releases = [{ id: 1, tagName: 'v1.8.2', sha: base, url: '', draft: false }];
+    const fixture = historyFixture();
+    vi.spyOn(fixture.github, 'getFileJson').mockImplementation(
+      async (path) =>
+        (path === '.release-please-manifest.json'
+          ? { '.': '1.8.2' }
+          : {
+              'include-component-in-tag': false,
+              packages: { '.': { 'release-type': 'node', 'package-name': 'blog' } },
+            }) as never,
+    );
+    vi.spyOn(fixture.github, 'releaseIterator').mockImplementation(async function* () {
+      yield* releases;
+    });
+    vi.spyOn(fixture.github, 'tagIterator').mockImplementation(async function* () {
+      for (const release of releases) yield { name: release.tagName, sha: release.sha };
+    });
+    vi.spyOn(fixture.github, 'mergeCommitIterator').mockImplementation(async function* (branch) {
+      for (const entry of git('log', '--topo-order', '--format=%H%x09%s', branch).split('\n')) {
+        const [sha, message] = entry.split('\t');
+        yield { sha: sha!, message: message!, files: ['package.json'] };
+      }
+    });
+    const preview = async () => {
+      const manifest = await Manifest.fromManifest(fixture.github, 'release');
+      return (await manifest.buildPullRequests())[0];
+    };
+
+    // Content-only release commit does not trigger a software version PR.
+    expect(await preview()).toBeUndefined();
+
+    // Back-merge release into main via merge commit so main receives the published essay.
+    git('checkout', '-q', 'main');
+    git('merge', '--no-ff', 'release', '-m', 'chore(release): back-merge direct content');
+
+    // Subsequent software feature lands on main and promotes cleanly to release.
+    put('src/config.ts', 'export const site = { ci: true, feat: true };\n');
+    commit('feat: add reading indicator');
+    git('checkout', '-q', 'release');
+    git('merge', '--no-ff', 'main', '-m', 'chore(release): promote reading indicator');
+
+    const candidate = await preview();
+    expect(candidate?.version?.toString()).toBe('1.9.0');
+    const notes = candidate!.body.toString();
+    expect(notes).toContain('add reading indicator');
+    expect(notes).not.toContain('publish direct essay');
+    expect(notes).not.toContain('speed up verification');
+    expect(notes).toContain('v1.8.2...v1.9.0');
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

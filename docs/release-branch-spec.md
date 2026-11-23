@@ -19,21 +19,22 @@
 
 ## 晋级与版本管理
 
-1. 确认上一轮结束，发布线的版本记录和修复已回流 `main`。
+1. 确认上一轮结束，发布线的版本记录、直通内容和修复已回流 `main`。
 2. 选择明确的 `main` SHA，从该点建立短期 `promote/*` 分支。
-3. 向 `release` 提晋级 PR，记录来源 SHA、完整变化范围和计划使用的发布路径；合并前确认批次符合内容资格，或能产生软件版本 PR。
+3. 向 `release` 提晋级 PR，记录来源 SHA、完整变化范围和计划使用的发布路径；合并前由 CI 的 `branch_gate` 校验当前 `release` HEAD 已回流至该快照，且批次满足内容资格或包含可触发软件版本的提交。
 4. 检查最新 PR head；审核整个批次，而非仅最后一个提交。
-5. 使用 merge commit 合并，保留原始功能提交及祖先关系。晋级标题使用不触发版本增长的 `chore:`，不得将整批变化再 squash 为一个功能提交。
+5. 使用 merge commit 合并，保留原始功能提交及祖先关系。晋级标题统一使用 `chore(release): promote <summary>`，不得将整批变化再 squash 为一个功能提交。
 6. 软件变化等待面向 `release` 的版本 PR；纯内容批次使用显式内容部署操作。
 7. 完成发布、两个目标的部署与 smoke，以及必要回流后，结束本轮。
 
-日常功能 PR 仍 squash 到 `main`，遵循 Conventional Commits。版本 PR 可以继续使用 squash；长期分支之间的晋级、回流使用 merge commit。
+日常功能 PR 仍 squash 到 `main`，遵循 Conventional Commits。版本 PR 与直通内容 PR 可以继续使用 squash；长期分支之间的晋级、回流使用 merge commit。`main` 的合并队列（`merge_group`）会拦截任何 `release` 或 `back-merge/*` 回流 PR，避免队列 squash 破坏发布标签的祖先关系。
 
 只在 `release` 运行一套 Release Please。它生成 `package.json`、`CHANGELOG.md` 和
 `.release-please-manifest.json` 的版本变化；`main` 通过回流接收这些记录，不独立计算版本。
-版本计算继续遵循现有提交类型规则。非内容白名单变化只表示不能走内容入口，不自动意味着应增加版本；无独立版本的工程变更留在 `main`，随能够产生软件版本 PR 的批次一起晋级，不单独占用发布线，也不伪装成内容部署。晋级审核通过版本预览确认软件批次具有可发布版本。
+版本计算继续遵循现有提交类型规则。非内容白名单变化只表示不能走内容入口，不自动意味着应增加版本；无独立版本的工程变更留在 `main`，随能够产生软件版本 PR 的批次一起晋级，不单独占用发布线，也不伪装成内容部署。晋级 PR 的 `branch_gate` 与只读版本预览共同确保工程批次不会空占发布线。
 
-默认整批晋级，不常态化 cherry-pick。若软件功能已进入 `release`，随后进入的文章不能绕过它单独上线。应在选定晋级节点时安排发布顺序。
+软件功能默认整批晋级，不常态化 cherry-pick。若软件功能已进入 `release`，随后进入的文章不能绕过它单独上线。
+但当 `main` 仅积累了尚未晋级的依赖/CI 等工程变化、而发布线位于已公开稳定软件基线上时，允许从 `release` 直接建立短期 `content/*` 分支提交纯内容 PR（标题须为非破坏性的 `content:`，由 `branch_gate` 在合并前执行累计内容白名单检查），合入 `release` 后通过显式内容部署入口上线，并随即以 merge commit 回流 `main`。
 
 ## 内容范围
 
@@ -168,8 +169,7 @@ HEAD 检查不锁住 Git 分支。检查之间分支推进可能造成一个目�
 旧 tag 回滚或多维护版本线需要另外设计，不能通过重跑旧任务实现。
 
 版本 PR 合并后即可创建 `release → main` 回流 PR，不必等待部署成功。
-发布线上的软件和内容修复及时回流。用 merge commit 保留祖先关系；冲突在从 `release`
-创建的临时分支上合入 `main` 后解决，再向 `main` 提 PR，不将未晋级的开发变化合回 `release`。
+发布线上的直通内容（`content/*`）、软件和内容修复及时回流。回流 PR 标题统一为 `chore(release): back-merge <summary>`，用 merge commit 保留祖先关系，禁止进入 `main` 的 squash 合并队列；冲突在从 `release` 创建的 `back-merge/*` 临时分支上合入 `main` 后解决，再向 `main` 提 PR，不将未晋级的开发变化合回 `release`。
 纯内容原本来自 `main` 且发布线没有额外修改时，无需制造额外回流提交。
 
 回流包括已进入历史的版本记录，即使对应发布失败；回流成功不能证明上线成功。
@@ -177,17 +177,19 @@ HEAD 检查不锁住 Git 分支。检查之间分支推进可能造成一个目�
 
 ## 实施清单与切换
 
-| 位置                                                             | 当前职责                                                                                                                  |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/release-please.yml`                           | maintenance 在 `release` push 后触发，checkout `release`，使用独立并发组                                                  |
-| `.github/workflows/release.yml`                                  | 软件和内容双入口、统一候选、共用任务和队列；版本 PR 过滤、refresh；两端使用 HEAD 门禁                                     |
-| `scripts/release.ts`、`scripts/release-recovery.ts`              | 正常版本维护、pending 查询和恢复历史面向 `release`；支持固定晋级分支的只读预览                                            |
-| `scripts/release-fixed.ts`                                       | 软件候选身份和发布校验、共享候选输出/部署门禁、内容候选校验                                                               |
-| `scripts/release-content.ts`                                     | 内容路径、操作、文件模式和累计历史校验；与普通 PR 的 docs-only CI 范围分开                                                |
-| `tests/unit/release*.test.ts`                                    | 覆盖双入口、历史计算、恢复、HEAD 门禁及 workflow 契约                                                                     |
-| `scripts/check-closeout.ts` 与相关测试                           | 保留日常 PR 的 `main` 默认值；发布 PR 使用 `--base release`，支持内容 dispatch 的候选和双目标结果，不能只按版本 PR 查部署 |
-| `docs/releasing.md`、`docs/deploy.md`、`docs/agents/closeout.md` | 操作步骤、目标分支、内容入口及独立结果判定                                                                                |
-| `docs/content.md`                                                | 记录内容资源目录和独立部署范围                                                                                            |
+| 位置                                                             | 当前职责                                                                                                                      |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/release-please.yml`                           | maintenance 在 `release` push 后触发，checkout `release`，使用独立并发组                                                      |
+| `.github/workflows/release.yml`                                  | 软件和内容双入口、统一候选、共用任务和队列；版本 PR 过滤、refresh；两端使用 HEAD 门禁                                         |
+| `scripts/release.ts`、`scripts/release-recovery.ts`              | 正常版本维护、pending 查询和恢复历史面向 `release`；支持固定晋级分支的只读预览                                                |
+| `scripts/release-fixed.ts`                                       | 软件候选身份和发布校验、共享候选输出/部署门禁、内容候选校验                                                                   |
+| `scripts/release-content.ts`                                     | 内容路径、操作、文件模式和累计历史校验；与普通 PR 的 docs-only CI 范围分开                                                    |
+| `scripts/release-gate.ts` 与 `.github/workflows/ci.yml`          | `release` PR（`promote/*`、`content/*`、`hotfix/*`、版本 PR）的自动化分支/祖先/内容或可发版门禁，以及 `main` 回流 PR 祖先校验 |
+| `.github/workflows/pr-title.yml`                                 | Conventional Commit 标题、发布/回流标题规范，以及 `main` Merge Queue 回流熔断                                                 |
+| `tests/unit/release*.test.ts`                                    | 覆盖双入口、历史计算、恢复、HEAD 门禁及 workflow 契约                                                                         |
+| `scripts/check-closeout.ts` 与相关测试                           | 保留日常 PR 的 `main` 默认值；发布 PR 使用 `--base release`，支持内容 dispatch 的候选和双目标结果，不能只按版本 PR 查部署     |
+| `docs/releasing.md`、`docs/deploy.md`、`docs/agents/closeout.md` | 操作步骤、目标分支、内容入口及独立结果判定                                                                                    |
+| `docs/content.md`                                                | 记录内容资源目录和独立部署范围                                                                                                |
 
 以下步骤用于首次建立或迁移发布线；日常发布遵循前文晋级流程：
 
