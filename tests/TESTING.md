@@ -264,8 +264,12 @@ in these artifacts or CI, rather than adding execution history to these guides.
 
 [CI](../.github/workflows/ci.yml) checks documentation formatting on documentation-only
 PRs. A PR confined to `tests/unit/**/*.test.ts` runs formatting, lint, types,
-translation checks and both complete unit and timezone suites. A PR confined to
-`tests/build/**/*.test.ts` runs formatting, lint, types and both contract shards.
+translation checks and both complete unit and timezone suites. A same-repository
+Release Please version PR into `release` that changes only `package.json#version`,
+`.release-please-manifest.json`, and `CHANGELOG.md` selects `release-meta` and runs
+branch gate, formatting, lint, types, translation checks and unit/timezone suites
+(full build and browser regression still run on the fixed merge SHA in `release.yml`).
+A PR confined to `tests/build/**/*.test.ts` runs formatting, lint, types and both contract shards.
 Changes confined to `.e2e.ts` files in one known deterministic browser variant
 run formatting, lint, types and every browser target configured for that variant.
 Before selecting a reduced scope, CI independently compares the merge tree with

@@ -276,3 +276,117 @@ exec "$REAL_GIT" "$@"
     'CI scope unit would omit changed files: ["src/example.ts"]',
   );
 });
+
+describe('release-meta scope for version PRs', () => {
+  const versionBranch = 'release-please--branches--release--components--sionrbot-blog';
+
+  function versionPrRepository(
+    change: (write: (path: string, content?: string) => void) => void,
+    refs: { baseRef?: string; headRef?: string; headRepo?: string } = {},
+  ) {
+    const cwd = mkdtempSync(join(tmpdir(), 'ci-scope-release-meta-'));
+    directories.push(cwd);
+    const git = (...args: string[]) =>
+      execFileSync('git', args, {
+        cwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+    const write = (path: string, content = '') => {
+      mkdirSync(dirname(join(cwd, path)), { recursive: true });
+      writeFileSync(join(cwd, path), content);
+    };
+    git('init', '-b', 'release');
+    git('config', 'user.name', 'CI scope test');
+    git('config', 'user.email', 'ci-scope@example.invalid');
+    git('config', 'commit.gpgsign', 'false');
+    write(
+      'package.json',
+      JSON.stringify({ name: 'blog', version: '1.10.2', dependencies: { astro: '7.4.12' } }) + '\n',
+    );
+    write('.release-please-manifest.json', JSON.stringify({ '.': '1.10.2' }) + '\n');
+    write('CHANGELOG.md', '# Changelog\n');
+    git('add', '.');
+    git('commit', '-m', 'base');
+    const base = git('rev-parse', 'HEAD');
+    git('checkout', '-b', 'version-pr');
+    change(write);
+    git('add', '-A');
+    git('commit', '--allow-empty', '-m', 'chore(release): release 1.10.3');
+    const head = git('rev-parse', 'HEAD');
+    git('checkout', 'release');
+    git('merge', '--no-ff', 'version-pr', '-m', 'merge');
+    const eventPath = join(cwd, 'event.json');
+    writeFileSync(
+      eventPath,
+      JSON.stringify({
+        pull_request: {
+          base: {
+            ref: refs.baseRef ?? 'release',
+            sha: base,
+            repo: { full_name: 'owner/blog' },
+          },
+          head: {
+            ref: refs.headRef ?? versionBranch,
+            sha: head,
+            repo: { full_name: refs.headRepo ?? 'owner/blog' },
+          },
+        },
+      }),
+    );
+    return {
+      cwd,
+      scope: () => detectCiScope(cwd, 'pull_request', eventPath, () => {}),
+    };
+  }
+
+  test('selects release-meta when a same-repo release version PR changes only version metadata', () => {
+    const repo = versionPrRepository((write) => {
+      write(
+        'package.json',
+        JSON.stringify({ name: 'blog', version: '1.10.3', dependencies: { astro: '7.4.12' } }) +
+          '\n',
+      );
+      write('.release-please-manifest.json', JSON.stringify({ '.': '1.10.3' }) + '\n');
+      write('CHANGELOG.md', '# Changelog\n\n## 1.10.3\n\n- fix: demo\n');
+    });
+    expect(repo.scope()).toBe('release-meta');
+    expect(browserMatrix('release-meta').include).toEqual([]);
+  });
+
+  test('falls back to full if package.json changes any field beyond version', () => {
+    const repo = versionPrRepository((write) => {
+      write(
+        'package.json',
+        JSON.stringify({ name: 'blog', version: '1.10.3', dependencies: { astro: '7.4.13' } }) +
+          '\n',
+      );
+      write('.release-please-manifest.json', JSON.stringify({ '.': '1.10.3' }) + '\n');
+    });
+    expect(repo.scope()).toBe('full');
+  });
+
+  test('falls back to full for mismatched versions, non-release base, wrong branch, or fork PRs', () => {
+    const bumpOnly = (write: (path: string, content?: string) => void) => {
+      write(
+        'package.json',
+        JSON.stringify({ name: 'blog', version: '1.10.3', dependencies: { astro: '7.4.12' } }) +
+          '\n',
+      );
+      write('.release-please-manifest.json', JSON.stringify({ '.': '1.10.3' }) + '\n');
+    };
+    expect(versionPrRepository(bumpOnly, { baseRef: 'main' }).scope()).toBe('full');
+    expect(versionPrRepository(bumpOnly, { headRef: 'promote/batch' }).scope()).toBe('full');
+    expect(versionPrRepository(bumpOnly, { headRepo: 'fork/blog' }).scope()).toBe('full');
+    expect(
+      versionPrRepository((write) => {
+        write(
+          'package.json',
+          JSON.stringify({ name: 'blog', version: '1.10.3', dependencies: { astro: '7.4.12' } }) +
+            '\n',
+        );
+        write('.release-please-manifest.json', JSON.stringify({ '.': '1.10.4' }) + '\n');
+      }).scope(),
+    ).toBe('full');
+  });
+});

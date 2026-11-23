@@ -41,8 +41,9 @@ function fixture() {
     mkdirSync(dirname(join(cwd, path)), { recursive: true });
     writeFileSync(join(cwd, path), contents);
   };
-  const writeManifest = (value: typeof manifest & { scripts?: Record<string, string> }) =>
-    write('package.json', JSON.stringify(value) + '\n');
+  const writeManifest = (
+    value: typeof manifest & { private?: boolean; scripts?: Record<string, string> },
+  ) => write('package.json', JSON.stringify(value) + '\n');
   const output = join(root, 'output');
   git('init');
   writeManifest(manifest);
@@ -136,6 +137,19 @@ test('independent source changes preserve the dependency key', () => {
   const original = repo.outputs();
   repo.write('src/example.ts', 'export const sample = 1;\n');
   expect(repo.outputs()).toEqual(original);
+});
+
+test('version bumps preserve the cache key for private root packages, not public packages', () => {
+  const repo = fixture();
+  repo.writeManifest({ ...manifest, private: true, version: '1.10.2' });
+  const privateOriginal = repo.outputs().cache_id;
+  repo.writeManifest({ ...manifest, private: true, version: '1.10.3' });
+  expect(repo.outputs().cache_id).toBe(privateOriginal);
+
+  repo.writeManifest({ ...manifest, version: '1.10.2' });
+  const publicOriginal = repo.outputs().cache_id;
+  repo.writeManifest({ ...manifest, version: '1.10.3' });
+  expect(repo.outputs().cache_id).not.toBe(publicOriginal);
 });
 
 test.each(['prepare', 'preinstall', 'install', 'postinstall'])(

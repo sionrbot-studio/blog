@@ -51,7 +51,7 @@ function verify(
   const selected = ['scope', 'format'];
   if (needsBranchGate) selected.push('branch_gate');
   if (scope !== 'docs') selected.push('lint', 'types');
-  if (scope === 'unit') selected.push('unit');
+  if (scope === 'unit' || scope === 'release-meta') selected.push('unit');
   if (scope === 'contracts') selected.push('contracts');
   if (fullBrowserMatrix.some(({ variant }) => variant === scope)) selected.push('browser');
   const jobs = Object.fromEntries(
@@ -86,6 +86,7 @@ function verify(
 test.each([
   'docs',
   'unit',
+  'release-meta',
   'contracts',
   'default',
   'i18n',
@@ -194,15 +195,16 @@ test('all worker jobs feed the unconditional required gate', () => {
   const workers = {
     lint: "needs.scope.outputs.scope != 'docs'",
     types: "needs.scope.outputs.scope != 'docs'",
-    unit: "needs.scope.outputs.scope == 'unit' || needs.scope.outputs.scope == 'full'",
+    unit:
+      "needs.scope.outputs.scope == 'unit' ||\n" +
+      "      needs.scope.outputs.scope == 'release-meta' ||\n" +
+      "      needs.scope.outputs.scope == 'full'",
     build: "needs.scope.outputs.scope == 'full'",
     contracts: "needs.scope.outputs.scope == 'contracts' || needs.scope.outputs.scope == 'full'",
     browser: browserScopes + 'needs.scope.outputs.scope)',
   };
   for (const [name, condition] of Object.entries(workers))
-    expect(workflow.split('\n  ' + name + ':\n')[1].split('    steps:')[0]).toContain(
-      `if: ${condition}\n`,
-    );
+    expect(workflow.split('\n  ' + name + ':\n')[1].split('    steps:')[0]).toContain(condition);
   expect(workflow).toContain('matrix: ${{ fromJSON(needs.scope.outputs.browser_matrix) }}');
   expect(workflow).toContain(`if: ${browserScopes}steps.select.outputs.scope)`);
 });

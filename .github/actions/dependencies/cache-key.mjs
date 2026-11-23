@@ -8,6 +8,8 @@ const scripts = manifest.scripts ?? {};
 const registerHooks = scripts.prepare === 'vp config --no-agent';
 if (registerHooks) delete scripts.prepare;
 if (Object.keys(scripts).length === 0) delete manifest.scripts;
+// A private root package's release version bump does not alter installed node_modules.
+if (manifest.private === true) delete manifest.version;
 
 const installHooks = [
   'pnpm:devPreinstall',

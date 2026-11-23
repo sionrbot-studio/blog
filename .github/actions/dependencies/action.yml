@@ -1,5 +1,5 @@
 name: Install locked dependencies
-description: Restore the installed tree from an exact main-branch cache
+description: Restore the installed tree from an exact main or release branch cache
 inputs:
   environment:
     description: Runner image and workspace layout
@@ -10,7 +10,7 @@ runs:
     - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
       with:
         cache-toolchain: true
-        cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        cache-save: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release') }}
         run-install: false
     - id: inputs
       shell: bash
@@ -29,7 +29,7 @@ runs:
     - if: steps.modules.outputs.cache-hit == 'true' && steps.inputs.outputs.register_hooks == 'true'
       shell: bash
       run: vp config --no-agent
-    - if: steps.inputs.outputs.cache_id != '' && steps.modules.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    - if: steps.inputs.outputs.cache_id != '' && steps.modules.outputs.cache-hit != 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release')
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: node_modules

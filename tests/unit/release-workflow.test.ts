@@ -11,19 +11,32 @@ const maintenance = readFileSync(
   new URL('../../.github/workflows/release-please.yml', import.meta.url),
   'utf8',
 );
+const jobOrder = [
+  'admit',
+  'verify_checks',
+  'verify_build',
+  'verify_browser',
+  'build_pages',
+  'build_workers',
+  'prepare',
+  'pages',
+  'mirror',
+  'workers',
+  'refresh',
+] as const;
 const jobs = [
   ...template.matchAll(
-    /^  (prepare|pages|mirror|workers|refresh):\n([\s\S]*?)(?=^  \w+:|$(?![\s\S]))/gm,
+    new RegExp(`^  (${jobOrder.join('|')}):\\n([\\s\\S]*?)(?=^  [a-z_]+:|$(?![\\s\\S]))`, 'gm'),
   ),
 ].map((match) => ({
-  id: match[1],
-  body: match[2],
+  id: match[1]!,
+  body: match[2]!,
   steps: [
-    ...match[2].matchAll(/^      - id: (\w+)\n([\s\S]*?)(?=^      - id: |$(?![\s\S]))/gm),
+    ...match[2]!.matchAll(/^      - id: (\w+)\n([\s\S]*?)(?=^      - id: |$(?![\s\S]))/gm),
   ].map((step) => ({
-    id: step[1],
-    body: step[2],
-    condition: step[2].match(/^        if: \$\{\{ (.*) \}\}$/m)?.[1],
+    id: step[1]!,
+    body: step[2]!,
+    condition: step[2]!.match(/^        if: \$\{\{ (.*) \}\}$/m)?.[1],
   })),
 }));
 const steps = jobs.flatMap((job) => job.steps);
@@ -47,12 +60,13 @@ function execute(failingStep?: string, supersededGates: readonly string[] = [], 
     }
     let failed = false;
     for (const step of job.steps) {
-      const condition = step.condition ?? 'success()';
-      const explicitStatus = /(?:success|failure|cancelled|always)\(/.test(condition);
+      const stepCondition = step.condition ?? 'success()';
+      const explicitStatus = /(?:success|failure|cancelled|always)\(/.test(stepCondition);
       const enabled =
         (!failed || explicitStatus) &&
-        runInNewContext(condition, {
+        runInNewContext(stepCondition, {
           steps: results,
+          needs: jobResults,
           github: { event_name: kind === 'content' ? 'workflow_dispatch' : 'pull_request' },
           always: () => true,
           cancelled: () => false,
@@ -82,11 +96,15 @@ function execute(failingStep?: string, supersededGates: readonly string[] = [], 
       outputs: Object.fromEntries(
         [
           ...outputs.matchAll(
-            /^      ([\w-]+): \$\{\{ steps\.(\w+)\.(outcome|outputs\.([\w-]+)) \}\}$/gm,
+            /^      ([\w-]+): \$\{\{ (steps|needs)\.(\w+)\.(outcome|outputs\.([\w-]+)) \}\}$/gm,
           ),
-        ].map(([, key, step, property, output]) => [
+        ].map(([, key, source, ref, property, output]) => [
           key,
-          (property === 'outcome' ? results[step]?.outcome : results[step]?.outputs[output]) ?? '',
+          (source === 'steps'
+            ? property === 'outcome'
+              ? results[ref]?.outcome
+              : results[ref]?.outputs[output]
+            : jobResults[ref]?.outputs[output]) ?? '',
         ]),
       ),
     };
@@ -95,6 +113,7 @@ function execute(failingStep?: string, supersededGates: readonly string[] = [], 
     attempted,
     failed: Object.values(jobResults).some((job) => job.result === 'failure'),
     results,
+    jobResults,
   };
 }
 
@@ -106,14 +125,15 @@ describe('fixed-source release wiring', () => {
     for (const prerequisite of [
       'candidate',
       'checks',
+      'baseline_build',
       'build_tests',
-      'default_browser',
-      'i18n_browser',
-      'forms_browser',
-      'rendering_browser',
-      'production_path_browser',
+      'browsers',
+      'browser_suite',
       'pages_build',
+      'pages_upload',
       'workers_build',
+      'workers_upload',
+      'prepare_attempt',
     ]) {
       expect(result.attempted.indexOf(prerequisite), prerequisite).toBeGreaterThan(-1);
       expect(result.attempted.indexOf(prerequisite), prerequisite).toBeLessThan(publishedAt);
@@ -124,16 +144,15 @@ describe('fixed-source release wiring', () => {
 
   test.each([
     'checks',
+    'baseline_build',
     'build_tests',
-    'default_browser',
-    'i18n_browser',
-    'forms_browser',
-    'rendering_browser',
-    'production_path_browser',
+    'browsers',
+    'browser_suite',
     'pages_build',
     'workers_build',
     'pages_upload',
     'workers_upload',
+    'prepare_attempt',
   ])('%s failure prevents publication and deployment', (step) => {
     const result = execute(step);
     expect(result.failed).toBe(true);
@@ -265,7 +284,7 @@ describe('fixed-source release wiring', () => {
     );
   });
 
-  test.each(['pages', 'mirror', 'workers'])(
+  test.each(['prepare', 'pages', 'mirror', 'workers'])(
     '%s rejects deployment-only retries with stale outputs',
     (platform) => {
       const body = steps.find((step) => step.id === `${platform}_attempt`)!.body;
@@ -287,14 +306,39 @@ describe('fixed-source release wiring', () => {
     },
   );
 
-  test('keeps all browser targets and scopes Pages permission away from verification', () => {
-    const prepare = jobs.find((job) => job.id === 'prepare')!.body;
+  test('keeps all browser targets, reuses dependency cache, and scopes Pages permission away from verification', () => {
+    const browser = jobs.find((job) => job.id === 'verify_browser')!.body;
     for (const variant of ['default', 'i18n', 'configured-forms', 'rendering']) {
-      expect(prepare).toContain(`--variant ${variant} --target desktop,narrow,webkit`);
+      expect(browser).toContain(`- variant: ${variant}\n            target: desktop,narrow,webkit`);
     }
-    expect(prepare).toContain('--variant production-path --target desktop');
-    expect(prepare).not.toContain('pages: write');
-    expect(prepare).not.toContain('id-token: write');
+    expect(browser).toContain('- variant: production-path\n            target: desktop');
+    for (const id of [
+      'verify_checks',
+      'verify_build',
+      'verify_browser',
+      'build_pages',
+      'build_workers',
+      'workers',
+      'refresh',
+    ]) {
+      expect(jobs.find((job) => job.id === id)!.body).toContain(
+        'uses: ./.github/actions/dependencies',
+      );
+    }
+    expect(maintenance).toContain('uses: ./.github/actions/dependencies');
+    for (const id of [
+      'admit',
+      'verify_checks',
+      'verify_build',
+      'verify_browser',
+      'build_pages',
+      'build_workers',
+      'prepare',
+    ]) {
+      const body = jobs.find((job) => job.id === id)!.body;
+      expect(body).not.toContain('pages: write');
+      expect(body).not.toContain('id-token: write');
+    }
     expect(jobs.find((job) => job.id === 'pages')!.body).toContain('pages: write');
     expect(jobs.find((job) => job.id === 'refresh')!.body).toContain('group: release-pr-release');
     expect(jobs.find((job) => job.id === 'refresh')!.body).toContain('node scripts/release.ts pr');
@@ -305,7 +349,10 @@ describe('fixed-source release wiring', () => {
     const content = execute(undefined, [], 'content');
     expect(content.failed).toBe(false);
     expect(content.attempted).not.toContain('publish');
-    for (const id of software.attempted.filter((id) => !['publish'].includes(id))) {
+    expect(content.attempted).not.toContain('publish_checkout');
+    for (const id of software.attempted.filter(
+      (id) => !['publish', 'publish_checkout'].includes(id),
+    )) {
       expect(content.attempted).toContain(id);
     }
     expect(content.attempted).toContain('admission');
@@ -317,26 +364,25 @@ describe('fixed-source release wiring', () => {
   });
 
   test.each(['candidate', 'checks', 'workers_build', 'pages_upload'])(
-    'content %s failure prevents both deployments and still records preparation',
+    'content %s failure prevents both deployments',
     (step) => {
       const result = execute(step, [], 'content');
       expect(result.failed).toBe(true);
       expect(result.attempted).not.toContain('pages_deploy');
       expect(result.attempted).not.toContain('workers_deploy');
-      expect(result.attempted).toContain('preparation_summary');
     },
   );
 
   test('admits only the release execution ref and live fixed input before running repository code', () => {
-    const prepare = jobs.find((job) => job.id === 'prepare')!;
-    expect(prepare.steps[0].id).toBe('admission');
-    const admission = prepare.steps[0].body;
+    const admit = jobs.find((job) => job.id === 'admit')!;
+    expect(admit.steps[0].id).toBe('admission');
+    const admission = admit.steps[0].body;
     expect(admission).toContain('refs/heads/release');
     expect(admission).toContain('^[a-f0-9]{40}$');
     expect(admission).toContain('"$CANDIDATE_SHA" != "$GITHUB_SHA"');
     expect(admission).toContain('/git/ref/heads/release');
     expect(admission).toContain('ref.object.sha !== process.env.CANDIDATE_SHA');
-    expect(prepare.steps.find((step) => step.id === 'checkout')!.body).toContain('fetch-depth: 0');
+    expect(admit.steps.find((step) => step.id === 'checkout')!.body).toContain('fetch-depth: 0');
   });
 
   test.each([
@@ -398,10 +444,16 @@ describe('fixed-source release wiring', () => {
       process: {
         env: {
           JOB_RESULTS: JSON.stringify({
-            prepare: {
+            admit: {
               result: 'success',
               outputs: { version: '1.9.1', tag: 'v1.9.1', 'tag-sha': 'b'.repeat(40) },
             },
+            verify_checks: { result: 'success' },
+            verify_build: { result: 'success' },
+            verify_browser: { result: 'success' },
+            build_pages: { result: 'success' },
+            build_workers: { result: 'success' },
+            prepare: { result: 'success', outputs: { publish: 'skipped' } },
             pages: { result: 'success', outputs: pages },
             mirror,
             workers: {
@@ -442,7 +494,12 @@ describe('fixed-source release wiring', () => {
         `smoke: \${{ steps.${target}_smoke.outcome }}`,
       );
     }
-    expect(template).toContain('needs: [prepare, pages, mirror, workers, refresh]');
+    const summaryNeeds =
+      template
+        .split('\n  summary:\n')[1]!
+        .match(/^\s+needs:\s*\[([\s\S]*?)\]/m)?.[1]
+        .match(/[a-z_]+/g) ?? [];
+    expect(summaryNeeds).toEqual([...jobOrder]);
     expect(template).toContain("output.gate === 'false' ? 'superseded; deployment skipped'");
     expect(template).toContain('not applicable (content)');
   });
