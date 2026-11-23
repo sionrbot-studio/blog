@@ -109,10 +109,12 @@ batch cannot independently produce a software release.
 
 ## Deploy content independently
 
-With the release branch and environment rules configured, promote an eligible content snapshot and
-record the complete `release` HEAD SHA. Run **Release fixed source** manually
-from the `release` branch, supplying that SHA as the `sha` input. Equivalently,
-when deployment is authorized:
+There are two ways to bring eligible content onto `release`:
+
+- **Direct content branch (`content/* → release`, default when `main` has unpromoted CI/dependency work)**: branch `content/<name>` from `release`, open a PR targeting `release` with a non-breaking `content: ...` title, let `verify` (including `branch_gate`) and `title` pass, squash merge it, deploy via the manual entry point below, and then back-merge `release → main` with a merge commit.
+- **Promotion (`promote/* → release`)**: when `main` has no non-content changes ahead of `release`, promote a fixed `main` snapshot with a merge commit (`chore(release): promote ...`). No synthetic back-merge is needed if `release` has no additional changes.
+
+With the release branch and environment rules configured, record the complete `release` HEAD SHA and run **Release fixed source** manually from the `release` branch, supplying that SHA as the `sha` input. Equivalently, when deployment is authorized:
 
 ```sh
 gh workflow run release.yml --ref release -f sha="$CANDIDATE_SHA"
@@ -146,11 +148,7 @@ with unrelated content after a version PR merges but before publication: the old
 candidate loses HEAD deployment eligibility and the new content has no public
 software baseline. Source repairs follow recovery below.
 
-Create a `release → main` back-merge PR after a version PR merges, and promptly
-back-merge release-line repairs. Use merge commits. For conflicts, create a branch
-from `release`, merge `main` into it, resolve, and PR that branch to `main`; do not
-merge unpromoted development into `release`. Content already inherited from
-`main` needs no synthetic back-merge when `release` has no additional changes.
+Create a `release → main` back-merge PR (`chore(release): back-merge ...`) after a version PR merges, and promptly back-merge direct `content/*` publications and release-line repairs. Always use a **merge commit** and never enqueue a back-merge PR in `main`'s squash merge queue (`PR title / title` rejects back-merge PRs in `merge_group`). For conflicts, create a `back-merge/*` branch from `release`, merge `main` into it, resolve, and PR that branch to `main`; do not merge unpromoted development into `release`. Content already inherited from `main` via `promote/*` needs no synthetic back-merge when `release` has no additional changes.
 Back-merge is independent of deployment success and includes failed candidates'
 version records. A fix on `release` ships with everything already promoted there;
 this workflow does not maintain an independent old-version hotfix line.

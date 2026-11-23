@@ -8,8 +8,18 @@ import { expect, test } from 'vite-plus/test';
 const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const gate = workflow.split('\n  verify:\n')[1];
 const script = gate.split("<<'NODE'\n")[1].split('\n          NODE')[0];
-const names = ['scope', 'format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser'];
-const nonDocs = names.filter((name) => !['scope', 'format'].includes(name));
+const names = [
+  'scope',
+  'branch_gate',
+  'format',
+  'lint',
+  'types',
+  'unit',
+  'build',
+  'contracts',
+  'browser',
+];
+const dependencyWorkers = ['format', 'lint', 'types', 'unit', 'build', 'contracts', 'browser'];
 const fullBrowserMatrix = [
   { variant: 'default', target: 'desktop' },
   { variant: 'default', target: 'narrow' },
@@ -31,8 +41,15 @@ function verify(
   overrides: Record<string, string | null> = {},
   event = 'pull_request',
   matrix = browserMatrix(scope),
+  refs: { baseRef?: string; headRef?: string } = { baseRef: 'main', headRef: 'feat/example' },
 ) {
+  const needsBranchGate =
+    event === 'pull_request' &&
+    (refs.baseRef === 'release' ||
+      (refs.baseRef === 'main' &&
+        (refs.headRef === 'release' || (refs.headRef ?? '').startsWith('back-merge/'))));
   const selected = ['scope', 'format'];
+  if (needsBranchGate) selected.push('branch_gate');
   if (scope !== 'docs') selected.push('lint', 'types');
   if (scope === 'unit') selected.push('unit');
   if (scope === 'contracts') selected.push('contracts');
@@ -46,12 +63,23 @@ function verify(
           outputs: name === 'scope' ? { scope, browser_matrix: matrix } : {},
           result:
             overrides[name] ??
-            (scope === 'full' || selected.includes(name) ? 'success' : 'skipped'),
+            (name === 'branch_gate'
+              ? needsBranchGate
+                ? 'success'
+                : 'skipped'
+              : scope === 'full' || selected.includes(name)
+                ? 'success'
+                : 'skipped'),
         },
       ]),
   );
   return spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-    env: { GITHUB_EVENT_NAME: event, NEEDS: JSON.stringify(jobs) },
+    env: {
+      GITHUB_EVENT_NAME: event,
+      BASE_REF: refs.baseRef ?? '',
+      HEAD_REF: refs.headRef ?? '',
+      NEEDS: JSON.stringify(jobs),
+    },
   }).status;
 }
 
@@ -191,10 +219,43 @@ test('a cold installation must succeed before saving the exact dependency tree',
 });
 
 test('each verification worker prepares its dependencies', () => {
-  for (const name of ['format', ...nonDocs]) {
+  for (const name of dependencyWorkers) {
     const job = workflow.split(`\n  ${name}:\n`)[1].split(/\n  \w+:\n/)[0];
     expect(job).toContain('uses: ./.github/actions/dependencies');
   }
+});
+
+test('branch_gate is required on release PRs and main back-merge PRs, and skipped elsewhere', () => {
+  expect(
+    verify('full', {}, 'pull_request', browserMatrix('full'), {
+      baseRef: 'release',
+      headRef: 'promote/batch',
+    }),
+  ).toBe(0);
+  expect(
+    verify('full', { branch_gate: 'skipped' }, 'pull_request', browserMatrix('full'), {
+      baseRef: 'release',
+      headRef: 'promote/batch',
+    }),
+  ).toBe(1);
+  expect(
+    verify('full', { branch_gate: 'failure' }, 'pull_request', browserMatrix('full'), {
+      baseRef: 'main',
+      headRef: 'back-merge/v1.10.2',
+    }),
+  ).toBe(1);
+  expect(
+    verify('full', {}, 'pull_request', browserMatrix('full'), {
+      baseRef: 'main',
+      headRef: 'release',
+    }),
+  ).toBe(0);
+  expect(
+    verify('full', { branch_gate: 'success' }, 'pull_request', browserMatrix('full'), {
+      baseRef: 'main',
+      headRef: 'feat/ordinary',
+    }),
+  ).toBe(1);
 });
 
 test.each(['lint', 'types', 'unit'])('unit-only changes require %s to run', (job) => {
