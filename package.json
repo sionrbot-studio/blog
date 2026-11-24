@@ -63,7 +63,7 @@
     "typescript-eslint": "^8.73.0",
     "vite": "catalog:",
     "vite-plus": "catalog:",
-    "wrangler": "4.163.0",
+    "wrangler": "4.166.0",
     "zod": "^4.6.7"
   },
   "private": true,
