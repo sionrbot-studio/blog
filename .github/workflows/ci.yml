@@ -326,7 +326,7 @@ jobs:
           const require = createRequire(import.meta.url);
           const webRequire = createRequire(require.resolve('@e2e-dev/web'));
           const { version } = webRequire('playwright-core/package.json');
-          if (version !== '1.65.0') throw new Error(`Update the container image for Playwright ${version}`);
+          if (version !== '1.65.1') throw new Error(`Update the container image for Playwright ${version}`);
           const { chromium, webkit } = webRequire('playwright-core');
           const webkitBrowser = await webkit.launch();
           await webkitBrowser.close();
