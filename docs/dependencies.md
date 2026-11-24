@@ -59,10 +59,9 @@ ecosystem as supporting indirect dependencies through that option.
 [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
 They pin `minimatch` to `11.0.5` on these dependency edges:
 
-| Parent package                         | Parent version matched by the override |
-| -------------------------------------- | -------------------------------------- |
-| `@typescript-eslint/typescript-estree` | `8.72.2`                               |
-| `@google-automations/git-file-utils`   | `3.2.1`                                |
+| Parent package                       | Parent version matched by the override |
+| ------------------------------------ | -------------------------------------- |
+| `@google-automations/git-file-utils` | `3.2.1`                                |
 
 These are temporary compatibility exceptions, not an automatic update mechanism.
 The exact minimatch pin does not advance when a newer release appears. Each rule
