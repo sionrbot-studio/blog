@@ -9,13 +9,13 @@ from urllib.request import Request, urlopen
 REGISTRY = "https://mcr.microsoft.com/v2/playwright"
 MANIFEST_TYPE = "application/vnd.oci.image.manifest.v1+json"
 CONFIG_TYPE = "application/vnd.oci.image.config.v1+json"
-# This linux/amd64 manifest belongs to the v1.65.0-noble image index.
-UPSTREAM = "sha256:f6fe3cf9a493670b9a20f33597a807262abb25c40c31839ba4ac1dbc51fe7366"
+# This linux/amd64 manifest belongs to the v1.65.1-noble image index.
+UPSTREAM = "sha256:766137e2d9caad4744187e53cdc89320ba6f2eb57cff097374020944b44dd0a9"
 # Build input used to assemble the system-dependency layer. CI installs its own locked CLI.
-CLI_ARCHIVE = "sha256:cf86f9024ffcc4f84f99263173554cb2559a25ca9f0efe55ac8617c7da478ac0"
-CHROMIUM = "sha256:fefbb3a1310c200814d5ffe19a32291321b9fc42a4ae539c14fb1a2c0dc9da17"
-WEBKIT = "sha256:349f5ffaff07884d162fc813c5bef0b47bc722b7cdcae8661bb947d2aee48acd"
-FIREFOX = "sha256:18563da2c18c2a000c16a386f81c5ac1ecbb2cd6ced5a760965ff97511a52092"
+CLI_ARCHIVE = "sha256:9e0eed0efbea1fa9e728dd871b007c05163dec7ef7fdab23b353652d842e347a"
+CHROMIUM = "sha256:16013128adc12408994436e79a979c00444d275883a39ed170fb00ff95c9e193"
+WEBKIT = "sha256:80e9d9e1b5bbe54a8ce0b223013d7cfdb3dcadb5dce77a24f7ad852216685223"
+FIREFOX = "sha256:47752f912df11e40e8aa4458765dea5bc3f7203289565aac58d3e22c3ca01c93"
 
 
 def digest(data):
